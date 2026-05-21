@@ -2,9 +2,10 @@ pub mod cloud;
 pub mod openai;
 pub mod prompt;
 
-use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+use crate::error::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
@@ -62,7 +63,7 @@ pub trait LlmProvider: Send + Sync {
         config: &LlmConfig,
         req: &PolishRequest,
         on_chunk: Option<&ChunkCallback>,
-    ) -> Result<PolishResponse>;
+    ) -> Result<PolishResponse, AppError>;
 
     fn name(&self) -> &str;
 }

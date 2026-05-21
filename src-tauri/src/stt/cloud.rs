@@ -1,5 +1,6 @@
-use anyhow::Result;
 use async_trait::async_trait;
+
+use crate::error::AppError;
 
 use super::whisper_compat::WhisperCompatProvider;
 use super::{SttConfig, SttProvider, TranscriptEvent};
@@ -38,9 +39,11 @@ impl CloudSttProvider {
 
 #[async_trait]
 impl SttProvider for CloudSttProvider {
-    async fn connect(&mut self, config: &SttConfig) -> Result<()> {
+    async fn connect(&mut self, config: &SttConfig) -> Result<(), AppError> {
         if config.api_key.is_empty() {
-            anyhow::bail!("Cloud STT: session token is missing. Please sign in first.");
+            return Err(AppError::Auth(
+                "Cloud STT: session token is missing. Please sign in first.".to_string(),
+            ));
         }
         self.stt_config = Some(config.clone());
         self.audio_buffer.clear();
@@ -48,19 +51,21 @@ impl SttProvider for CloudSttProvider {
         Ok(())
     }
 
-    async fn send_audio(&mut self, chunk: &[u8]) -> Result<()> {
+    async fn send_audio(&mut self, chunk: &[u8]) -> Result<(), AppError> {
         if self.audio_buffer.len() + chunk.len() > MAX_AUDIO_BYTES {
-            anyhow::bail!("Cloud STT: audio exceeds maximum length (~12 min)");
+            return Err(AppError::Config(
+                "Cloud STT: audio exceeds maximum length (~12 min)".to_string(),
+            ));
         }
         self.audio_buffer.extend_from_slice(chunk);
         Ok(())
     }
 
-    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>> {
+    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>, AppError> {
         Ok(None)
     }
 
-    async fn disconnect(&mut self) -> Result<Option<String>> {
+    async fn disconnect(&mut self) -> Result<Option<String>, AppError> {
         let config = match &self.stt_config {
             Some(c) => c.clone(),
             None => return Ok(None),
@@ -83,7 +88,8 @@ impl SttProvider for CloudSttProvider {
         loop {
             let file_part = reqwest::multipart::Part::bytes(wav_data.clone())
                 .file_name("audio.wav")
-                .mime_str("audio/wav")?;
+                .mime_str("audio/wav")
+                .map_err(|e| AppError::Config(e.to_string()))?;
 
             let mut form = reqwest::multipart::Form::new().part("audio", file_part);
 
@@ -106,7 +112,8 @@ impl SttProvider for CloudSttProvider {
                     let body = resp.text().await.unwrap_or_default();
 
                     if status.is_success() {
-                        let v: serde_json::Value = serde_json::from_str(&body)?;
+                        let v: serde_json::Value = serde_json::from_str(&body)
+                            .map_err(|e| AppError::Config(e.to_string()))?;
                         let text = v["text"].as_str().unwrap_or("").trim().to_string();
 
                         tracing::info!("Cloud STT transcription: {} chars", text.len());
@@ -121,7 +128,7 @@ impl SttProvider for CloudSttProvider {
                             .ok()
                             .and_then(|v| v["error"].as_str().map(String::from))
                             .unwrap_or_else(|| "STT quota exceeded".to_string());
-                        anyhow::bail!("{}", msg);
+                        return Err(AppError::Auth(msg));
                     } else if status.as_u16() >= 500 && attempt < 2 {
                         let truncate_at = body
                             .char_indices()
@@ -150,7 +157,10 @@ impl SttProvider for CloudSttProvider {
                             .unwrap_or(body.len());
                         let sanitized = &body[..truncate_at];
                         tracing::error!("Cloud STT HTTP {}: {}", status, sanitized);
-                        anyhow::bail!("Cloud STT error ({}): {}", status, sanitized);
+                        return Err(AppError::Api {
+                            status: status.as_u16(),
+                            body: sanitized.to_string(),
+                        });
                     }
                 }
                 Err(e) if e.is_timeout() && attempt < 2 => {

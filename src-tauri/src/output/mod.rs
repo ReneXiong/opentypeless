@@ -1,9 +1,8 @@
 pub mod clipboard;
 pub mod keyboard;
 
-use anyhow::Result;
 use async_trait::async_trait;
-use crate::error::UserError;
+use crate::error::{AppError, UserError};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OutputMode {
@@ -13,7 +12,7 @@ pub enum OutputMode {
 
 #[async_trait]
 pub trait TextOutput: Send + Sync {
-    async fn type_text(&self, text: &str) -> Result<()>;
+    async fn type_text(&self, text: &str) -> Result<(), AppError>;
     fn mode(&self) -> OutputMode;
 }
 

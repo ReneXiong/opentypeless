@@ -1,7 +1,8 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
+
+use crate::error::AppError;
 
 use super::{prompt, ChunkCallback, LlmConfig, LlmProvider, PolishRequest, PolishResponse};
 
@@ -34,7 +35,7 @@ impl LlmProvider for OpenAiProvider {
         config: &LlmConfig,
         req: &PolishRequest,
         on_chunk: Option<&ChunkCallback>,
-    ) -> Result<PolishResponse> {
+    ) -> Result<PolishResponse, AppError> {
         let has_selected_text = req
             .selected_text
             .as_ref()
@@ -85,7 +86,7 @@ impl LlmProvider for OpenAiProvider {
 
         // Retry the initial connection (not once streaming starts)
         let mut response = None;
-        let mut last_error: Option<anyhow::Error> = None;
+        let mut last_error: Option<AppError> = None;
         let mut attempt = 0u32;
 
         loop {
@@ -111,7 +112,10 @@ impl LlmProvider for OpenAiProvider {
                             status,
                             attempt + 1
                         );
-                        last_error = Some(anyhow::anyhow!("HTTP {}: {}", status, body_text));
+                        last_error = Some(AppError::Api {
+                            status: status.as_u16(),
+                            body: body_text,
+                        });
                         attempt += 1;
                         tokio::time::sleep(std::time::Duration::from_millis(
                             1000 * 2u64.pow(attempt - 1),
@@ -129,7 +133,10 @@ impl LlmProvider for OpenAiProvider {
                             .map(|(i, c)| i + c.len_utf8())
                             .unwrap_or(text.len());
                         let sanitized = &text[..truncate_at];
-                        anyhow::bail!("LLM API error {}: {}", status, sanitized);
+                        return Err(AppError::Api {
+                            status: status.as_u16(),
+                            body: sanitized.to_string(),
+                        });
                     }
                 }
                 Err(e) if e.is_timeout() && attempt < 2 => {

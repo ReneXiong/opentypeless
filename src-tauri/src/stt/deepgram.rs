@@ -1,7 +1,8 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+use crate::error::AppError;
 
 use super::{SttConfig, SttProvider, TranscriptEvent};
 
@@ -44,7 +45,7 @@ impl DeepgramProvider {
 
 #[async_trait]
 impl SttProvider for DeepgramProvider {
-    async fn connect(&mut self, config: &SttConfig) -> Result<()> {
+    async fn connect(&mut self, config: &SttConfig) -> Result<(), AppError> {
         let url = Self::build_url(config);
 
         let mut attempt = 0u32;
@@ -60,7 +61,8 @@ impl SttProvider for DeepgramProvider {
                     "Sec-WebSocket-Key",
                     tokio_tungstenite::tungstenite::handshake::client::generate_key(),
                 )
-                .body(())?;
+                .body(())
+                .map_err(|e| AppError::Config(e.to_string()))?;
 
             match connect_async(request).await {
                 Ok((ws, _)) => {
@@ -80,19 +82,21 @@ impl SttProvider for DeepgramProvider {
                     ))
                     .await;
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(AppError::Network(e.to_string())),
             }
         }
     }
 
-    async fn send_audio(&mut self, chunk: &[u8]) -> Result<()> {
+    async fn send_audio(&mut self, chunk: &[u8]) -> Result<(), AppError> {
         if let Some(ws) = &mut self.ws {
-            ws.send(Message::Binary(chunk.to_vec())).await?;
+            ws.send(Message::Binary(chunk.to_vec()))
+                .await
+                .map_err(|e| AppError::Network(e.to_string()))?;
         }
         Ok(())
     }
 
-    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>> {
+    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>, AppError> {
         let ws = match &mut self.ws {
             Some(ws) => ws,
             None => return Ok(None),
@@ -100,7 +104,8 @@ impl SttProvider for DeepgramProvider {
 
         match ws.next().await {
             Some(Ok(Message::Text(text))) => {
-                let v: serde_json::Value = serde_json::from_str(&text)?;
+                let v: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|e| AppError::Config(e.to_string()))?;
 
                 // Check for error
                 if v.get("type").and_then(|t| t.as_str()) == Some("Error") {
@@ -152,7 +157,7 @@ impl SttProvider for DeepgramProvider {
         }
     }
 
-    async fn disconnect(&mut self) -> Result<Option<String>> {
+    async fn disconnect(&mut self) -> Result<Option<String>, AppError> {
         if let Some(ws) = &mut self.ws {
             let close_msg = serde_json::json!({"type": "CloseStream"});
             let _ = ws.send(Message::Text(close_msg.to_string())).await;

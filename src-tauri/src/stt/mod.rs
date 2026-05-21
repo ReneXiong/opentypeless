@@ -4,9 +4,10 @@ pub mod config;
 pub mod deepgram;
 pub mod whisper_compat;
 
-use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+use crate::error::AppError;
 
 use whisper_compat::{WhisperCompatConfig, WhisperCompatProvider};
 
@@ -40,11 +41,11 @@ pub enum TranscriptEvent {
 
 #[async_trait]
 pub trait SttProvider: Send + Sync {
-    async fn connect(&mut self, config: &SttConfig) -> Result<()>;
-    async fn send_audio(&mut self, chunk: &[u8]) -> Result<()>;
-    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>>;
+    async fn connect(&mut self, config: &SttConfig) -> Result<(), AppError>;
+    async fn send_audio(&mut self, chunk: &[u8]) -> Result<(), AppError>;
+    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>, AppError>;
     /// Disconnect and optionally return a final transcript (for file-based providers).
-    async fn disconnect(&mut self) -> Result<Option<String>>;
+    async fn disconnect(&mut self) -> Result<Option<String>, AppError>;
     fn name(&self) -> &str;
 }
 

@@ -1,5 +1,6 @@
-use anyhow::Result;
 use async_trait::async_trait;
+
+use crate::error::AppError;
 
 use super::{OutputMode, TextOutput};
 
@@ -22,15 +23,15 @@ impl ClipboardOutput {
 
 #[async_trait]
 impl TextOutput for ClipboardOutput {
-    async fn type_text(&self, text: &str) -> Result<()> {
+    async fn type_text(&self, text: &str) -> Result<(), AppError> {
         let text = text.to_string();
-        tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || -> Result<(), AppError> {
             let mut clipboard = arboard::Clipboard::new()
-                .map_err(|e| anyhow::anyhow!("Failed to access clipboard: {}", e))?;
+                .map_err(|e| AppError::Output(format!("Failed to access clipboard: {}", e)))?;
 
             clipboard
                 .set_text(&text)
-                .map_err(|e| anyhow::anyhow!("Failed to set clipboard: {}", e))?;
+                .map_err(|e| AppError::Output(format!("Failed to set clipboard: {}", e)))?;
 
             std::thread::sleep(std::time::Duration::from_millis(CLIPBOARD_SETTLE_MS));
 
@@ -45,9 +46,13 @@ impl TextOutput for ClipboardOutput {
                         "-e",
                         r#"tell application "System Events" to keystroke "v" using command down"#,
                     ])
-                    .status()?;
+                    .status()
+                    .map_err(|e| AppError::Output(format!("osascript error: {}", e)))?;
                 if !status.success() {
-                    anyhow::bail!("osascript paste failed with exit code: {:?}", status.code());
+                    return Err(AppError::Output(format!(
+                        "osascript paste failed with exit code: {:?}",
+                        status.code()
+                    )));
                 }
             }
 
@@ -55,22 +60,23 @@ impl TextOutput for ClipboardOutput {
             {
                 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
                 let mut enigo = Enigo::new(&Settings::default())
-                    .map_err(|e| anyhow::anyhow!("Failed to create Enigo: {:?}", e))?;
+                    .map_err(|e| AppError::Output(format!("Failed to create Enigo: {:?}", e)))?;
 
                 enigo
                     .key(Key::Control, Direction::Press)
-                    .map_err(|e| anyhow::anyhow!("Key press error: {:?}", e))?;
+                    .map_err(|e| AppError::Output(format!("Key press error: {:?}", e)))?;
                 enigo
                     .key(Key::Unicode('v'), Direction::Click)
-                    .map_err(|e| anyhow::anyhow!("Key click error: {:?}", e))?;
+                    .map_err(|e| AppError::Output(format!("Key click error: {:?}", e)))?;
                 enigo
                     .key(Key::Control, Direction::Release)
-                    .map_err(|e| anyhow::anyhow!("Key release error: {:?}", e))?;
+                    .map_err(|e| AppError::Output(format!("Key release error: {:?}", e)))?;
             }
 
             Ok(())
         })
-        .await?
+        .await
+        .map_err(|e| AppError::Output(format!("Spawn blocking error: {}", e)))?
     }
 
     fn mode(&self) -> OutputMode {

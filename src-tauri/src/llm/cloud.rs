@@ -1,7 +1,8 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
+
+use crate::error::AppError;
 
 use super::{prompt, ChunkCallback, LlmConfig, LlmProvider, PolishRequest, PolishResponse};
 
@@ -36,9 +37,11 @@ impl LlmProvider for CloudLlmProvider {
         config: &LlmConfig,
         req: &PolishRequest,
         on_chunk: Option<&ChunkCallback>,
-    ) -> Result<PolishResponse> {
+    ) -> Result<PolishResponse, AppError> {
         if config.api_key.is_empty() {
-            anyhow::bail!("Cloud LLM: session token is missing. Please sign in first.");
+            return Err(AppError::Auth(
+                "Cloud LLM: session token is missing. Please sign in first.".to_string(),
+            ));
         }
 
         let has_selected_text = req
@@ -75,7 +78,7 @@ impl LlmProvider for CloudLlmProvider {
 
         // Retry the initial connection (not once streaming starts)
         let mut response = None;
-        let mut last_error: Option<anyhow::Error> = None;
+        let mut last_error: Option<AppError> = None;
         let mut attempt = 0u32;
 
         loop {
@@ -101,7 +104,7 @@ impl LlmProvider for CloudLlmProvider {
                             .ok()
                             .and_then(|v| v["error"].as_str().map(String::from))
                             .unwrap_or_else(|| "LLM quota exceeded".to_string());
-                        anyhow::bail!("{}", msg);
+                        return Err(AppError::Auth(msg));
                     } else if status.as_u16() >= 500 && attempt < 2 {
                         let body_text = resp.text().await.unwrap_or_default();
                         tracing::warn!(
@@ -109,7 +112,10 @@ impl LlmProvider for CloudLlmProvider {
                             status,
                             attempt + 1
                         );
-                        last_error = Some(anyhow::anyhow!("HTTP {}: {}", status, body_text));
+                        last_error = Some(AppError::Api {
+                            status: status.as_u16(),
+                            body: body_text,
+                        });
                         attempt += 1;
                         tokio::time::sleep(std::time::Duration::from_millis(
                             1000 * 2u64.pow(attempt - 1),
@@ -125,7 +131,10 @@ impl LlmProvider for CloudLlmProvider {
                             .map(|(i, c)| i + c.len_utf8())
                             .unwrap_or(text.len());
                         let sanitized = &text[..truncate_at];
-                        anyhow::bail!("Cloud LLM error ({}): {}", status, sanitized);
+                        return Err(AppError::Api {
+                            status: status.as_u16(),
+                            body: sanitized.to_string(),
+                        });
                     }
                 }
                 Err(e) if e.is_timeout() && attempt < 2 => {

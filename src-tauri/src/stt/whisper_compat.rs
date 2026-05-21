@@ -1,5 +1,6 @@
-use anyhow::Result;
 use async_trait::async_trait;
+
+use crate::error::AppError;
 
 use super::{SttConfig, SttProvider, TranscriptEvent};
 
@@ -74,9 +75,12 @@ impl WhisperCompatProvider {
 
 #[async_trait]
 impl SttProvider for WhisperCompatProvider {
-    async fn connect(&mut self, config: &SttConfig) -> Result<()> {
+    async fn connect(&mut self, config: &SttConfig) -> Result<(), AppError> {
         if config.api_key.is_empty() {
-            anyhow::bail!("{} API key is empty", self.provider_config.provider_name);
+            return Err(AppError::Auth(format!(
+                "{} API key is empty",
+                self.provider_config.provider_name
+            )));
         }
         self.stt_config = Some(config.clone());
         self.audio_buffer.clear();
@@ -87,23 +91,23 @@ impl SttProvider for WhisperCompatProvider {
         Ok(())
     }
 
-    async fn send_audio(&mut self, chunk: &[u8]) -> Result<()> {
+    async fn send_audio(&mut self, chunk: &[u8]) -> Result<(), AppError> {
         if self.audio_buffer.len() + chunk.len() > MAX_AUDIO_BYTES {
-            anyhow::bail!(
+            return Err(AppError::Config(format!(
                 "{}: audio exceeds maximum length (~12 min)",
                 self.provider_config.provider_name
-            );
+            )));
         }
         self.audio_buffer.extend_from_slice(chunk);
         Ok(())
     }
 
-    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>> {
+    async fn recv_transcript(&mut self) -> Result<Option<TranscriptEvent>, AppError> {
         // File-based — transcription happens in disconnect().
         Ok(None)
     }
 
-    async fn disconnect(&mut self) -> Result<Option<String>> {
+    async fn disconnect(&mut self) -> Result<Option<String>, AppError> {
         let config = match &self.stt_config {
             Some(c) => c.clone(),
             None => return Ok(None),
@@ -130,7 +134,8 @@ impl SttProvider for WhisperCompatProvider {
         loop {
             let file_part = reqwest::multipart::Part::bytes(wav_data.clone())
                 .file_name("audio.wav")
-                .mime_str("audio/wav")?;
+                .mime_str("audio/wav")
+                .map_err(|e| AppError::Config(e.to_string()))?;
 
             let mut form = reqwest::multipart::Form::new()
                 .text("model", self.provider_config.model.to_string())
@@ -163,7 +168,8 @@ impl SttProvider for WhisperCompatProvider {
                     let body = resp.text().await.unwrap_or_default();
 
                     if status.is_success() {
-                        let v: serde_json::Value = serde_json::from_str(&body)?;
+                        let v: serde_json::Value = serde_json::from_str(&body)
+                            .map_err(|e| AppError::Config(e.to_string()))?;
                         let text = v["text"].as_str().unwrap_or("").trim().to_string();
 
                         tracing::info!(
@@ -212,12 +218,10 @@ impl SttProvider for WhisperCompatProvider {
                             status,
                             sanitized
                         );
-                        anyhow::bail!(
-                            "{} error ({}): {}",
-                            self.provider_config.provider_name,
-                            status,
-                            sanitized
-                        );
+                        return Err(AppError::Api {
+                            status: status.as_u16(),
+                            body: sanitized.to_string(),
+                        });
                     }
                 }
                 Err(e) if e.is_timeout() && attempt < 2 => {
