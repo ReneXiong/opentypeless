@@ -1,5 +1,6 @@
 pub mod app_detector;
 pub mod audio;
+pub mod error;
 pub mod llm;
 pub mod output;
 pub mod pipeline;
