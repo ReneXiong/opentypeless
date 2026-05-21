@@ -126,74 +126,115 @@ impl SttProvider for WhisperCompatProvider {
             audio_len_secs
         );
 
-        let file_part = reqwest::multipart::Part::bytes(wav_data)
-            .file_name("audio.wav")
-            .mime_str("audio/wav")?;
+        let mut attempt = 0u32;
+        loop {
+            let file_part = reqwest::multipart::Part::bytes(wav_data.clone())
+                .file_name("audio.wav")
+                .mime_str("audio/wav")?;
 
-        let mut form = reqwest::multipart::Form::new()
-            .text("model", self.provider_config.model.to_string())
-            .part("file", file_part);
+            let mut form = reqwest::multipart::Form::new()
+                .text("model", self.provider_config.model.to_string())
+                .part("file", file_part);
 
-        // Language hint (OpenAI/Groq support `language` field, others use `prompt`)
-        if let Some(ref lang) = config.language {
-            if lang != "multi" {
-                form = form.text("language", lang.clone());
+            // Language hint (OpenAI/Groq support `language` field, others use `prompt`)
+            if let Some(ref lang) = config.language {
+                if lang != "multi" {
+                    form = form.text("language", lang.clone());
+                }
             }
-        }
 
-        // Provider-specific extra fields
-        for &(key, value) in self.provider_config.extra_fields {
-            form = form.text(key.to_string(), value.to_string());
-        }
+            // Provider-specific extra fields
+            for &(key, value) in self.provider_config.extra_fields {
+                form = form.text(key.to_string(), value.to_string());
+            }
 
-        let resp = self
-            .client
-            .post(self.provider_config.endpoint)
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .multipart(form)
-            .timeout(std::time::Duration::from_secs(60))
-            .send()
-            .await?;
+            let resp_result = self
+                .client
+                .post(self.provider_config.endpoint)
+                .header("Authorization", format!("Bearer {}", config.api_key))
+                .multipart(form)
+                .timeout(std::time::Duration::from_secs(60))
+                .send()
+                .await;
 
-        let status = resp.status();
-        let body = resp.text().await?;
+            match resp_result {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
 
-        if !status.is_success() {
-            // Truncate at a valid UTF-8 char boundary to avoid panic on multi-byte chars
-            let truncate_at = body
-                .char_indices()
-                .take_while(|&(i, _)| i < 200)
-                .last()
-                .map(|(i, c)| i + c.len_utf8())
-                .unwrap_or(body.len());
-            let sanitized = &body[..truncate_at];
-            tracing::error!(
-                "{} HTTP {}: {}",
-                self.provider_config.provider_name,
-                status,
-                sanitized
-            );
-            anyhow::bail!(
-                "{} error ({}): {}",
-                self.provider_config.provider_name,
-                status,
-                sanitized
-            );
-        }
+                    if status.is_success() {
+                        let v: serde_json::Value = serde_json::from_str(&body)?;
+                        let text = v["text"].as_str().unwrap_or("").trim().to_string();
 
-        let v: serde_json::Value = serde_json::from_str(&body)?;
-        let text = v["text"].as_str().unwrap_or("").trim().to_string();
+                        tracing::info!(
+                            "{} transcription: {} chars",
+                            self.provider_config.provider_name,
+                            text.len()
+                        );
 
-        tracing::info!(
-            "{} transcription: {} chars",
-            self.provider_config.provider_name,
-            text.len()
-        );
-
-        if text.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(text))
+                        return Ok(if text.is_empty() {
+                            None
+                        } else {
+                            Some(text)
+                        });
+                    } else if status.as_u16() >= 500 && attempt < 2 {
+                        let truncate_at = body
+                            .char_indices()
+                            .take_while(|&(i, _)| i < 200)
+                            .last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(body.len());
+                        tracing::warn!(
+                            "{} server error {} (attempt {}/3): {}",
+                            self.provider_config.provider_name,
+                            status,
+                            attempt + 1,
+                            &body[..truncate_at]
+                        );
+                        attempt += 1;
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            1000 * 2u64.pow(attempt - 1),
+                        ))
+                        .await;
+                        continue;
+                    } else {
+                        // Truncate at a valid UTF-8 char boundary to avoid panic on multi-byte chars
+                        let truncate_at = body
+                            .char_indices()
+                            .take_while(|&(i, _)| i < 200)
+                            .last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(body.len());
+                        let sanitized = &body[..truncate_at];
+                        tracing::error!(
+                            "{} HTTP {}: {}",
+                            self.provider_config.provider_name,
+                            status,
+                            sanitized
+                        );
+                        anyhow::bail!(
+                            "{} error ({}): {}",
+                            self.provider_config.provider_name,
+                            status,
+                            sanitized
+                        );
+                    }
+                }
+                Err(e) if e.is_timeout() && attempt < 2 => {
+                    tracing::warn!(
+                        "{} timeout (attempt {}/3)",
+                        self.provider_config.provider_name,
+                        attempt + 1
+                    );
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        1000 * 2u64.pow(attempt - 1),
+                    ))
+                    .await;
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
     }
 

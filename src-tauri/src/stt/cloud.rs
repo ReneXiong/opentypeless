@@ -79,56 +79,94 @@ impl SttProvider for CloudSttProvider {
             audio_len_secs
         );
 
-        let file_part = reqwest::multipart::Part::bytes(wav_data)
-            .file_name("audio.wav")
-            .mime_str("audio/wav")?;
+        let mut attempt = 0u32;
+        loop {
+            let file_part = reqwest::multipart::Part::bytes(wav_data.clone())
+                .file_name("audio.wav")
+                .mime_str("audio/wav")?;
 
-        let mut form = reqwest::multipart::Form::new().part("audio", file_part);
+            let mut form = reqwest::multipart::Form::new().part("audio", file_part);
 
-        if let Some(ref lang) = config.language {
-            form = form.text("language", lang.clone());
-        }
-
-        let resp = self
-            .client
-            .post(format!("{}/api/proxy/stt", self.api_base_url))
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .multipart(form)
-            .timeout(std::time::Duration::from_secs(60))
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body = resp.text().await?;
-
-        if !status.is_success() {
-            if status.as_u16() == 403 {
-                let msg = serde_json::from_str::<serde_json::Value>(&body)
-                    .ok()
-                    .and_then(|v| v["error"].as_str().map(String::from))
-                    .unwrap_or_else(|| "STT quota exceeded".to_string());
-                anyhow::bail!("{}", msg);
+            if let Some(ref lang) = config.language {
+                form = form.text("language", lang.clone());
             }
-            let truncate_at = body
-                .char_indices()
-                .take_while(|&(i, _)| i < 200)
-                .last()
-                .map(|(i, c)| i + c.len_utf8())
-                .unwrap_or(body.len());
-            let sanitized = &body[..truncate_at];
-            tracing::error!("Cloud STT HTTP {}: {}", status, sanitized);
-            anyhow::bail!("Cloud STT error ({}): {}", status, sanitized);
-        }
 
-        let v: serde_json::Value = serde_json::from_str(&body)?;
-        let text = v["text"].as_str().unwrap_or("").trim().to_string();
+            let resp_result = self
+                .client
+                .post(format!("{}/api/proxy/stt", self.api_base_url))
+                .header("Authorization", format!("Bearer {}", config.api_key))
+                .multipart(form)
+                .timeout(std::time::Duration::from_secs(60))
+                .send()
+                .await;
 
-        tracing::info!("Cloud STT transcription: {} chars", text.len());
+            match resp_result {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
 
-        if text.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(text))
+                    if status.is_success() {
+                        let v: serde_json::Value = serde_json::from_str(&body)?;
+                        let text = v["text"].as_str().unwrap_or("").trim().to_string();
+
+                        tracing::info!("Cloud STT transcription: {} chars", text.len());
+
+                        return Ok(if text.is_empty() {
+                            None
+                        } else {
+                            Some(text)
+                        });
+                    } else if status.as_u16() == 403 {
+                        let msg = serde_json::from_str::<serde_json::Value>(&body)
+                            .ok()
+                            .and_then(|v| v["error"].as_str().map(String::from))
+                            .unwrap_or_else(|| "STT quota exceeded".to_string());
+                        anyhow::bail!("{}", msg);
+                    } else if status.as_u16() >= 500 && attempt < 2 {
+                        let truncate_at = body
+                            .char_indices()
+                            .take_while(|&(i, _)| i < 200)
+                            .last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(body.len());
+                        tracing::warn!(
+                            "Cloud STT server error {} (attempt {}/3): {}",
+                            status,
+                            attempt + 1,
+                            &body[..truncate_at]
+                        );
+                        attempt += 1;
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            1000 * 2u64.pow(attempt - 1),
+                        ))
+                        .await;
+                        continue;
+                    } else {
+                        let truncate_at = body
+                            .char_indices()
+                            .take_while(|&(i, _)| i < 200)
+                            .last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(body.len());
+                        let sanitized = &body[..truncate_at];
+                        tracing::error!("Cloud STT HTTP {}: {}", status, sanitized);
+                        anyhow::bail!("Cloud STT error ({}): {}", status, sanitized);
+                    }
+                }
+                Err(e) if e.is_timeout() && attempt < 2 => {
+                    tracing::warn!(
+                        "Cloud STT timeout (attempt {}/3)",
+                        attempt + 1
+                    );
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        1000 * 2u64.pow(attempt - 1),
+                    ))
+                    .await;
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
     }
 

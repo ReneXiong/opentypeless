@@ -37,23 +37,43 @@ impl AssemblyAiProvider {
 impl SttProvider for AssemblyAiProvider {
     async fn connect(&mut self, config: &SttConfig) -> Result<()> {
         let url = Self::build_url(config);
-        let request = http::Request::builder()
-            .uri(&url)
-            .header("Authorization", &config.api_key)
-            .header("Host", "streaming.assemblyai.com")
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .header("Sec-WebSocket-Version", "13")
-            .header(
-                "Sec-WebSocket-Key",
-                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
-            )
-            .body(())?;
 
-        let (ws, _) = connect_async(request).await?;
-        self.ws = Some(ws);
-        tracing::info!("AssemblyAI WebSocket connected");
-        Ok(())
+        let mut attempt = 0u32;
+        loop {
+            let request = http::Request::builder()
+                .uri(&url)
+                .header("Authorization", &config.api_key)
+                .header("Host", "streaming.assemblyai.com")
+                .header("Connection", "Upgrade")
+                .header("Upgrade", "websocket")
+                .header("Sec-WebSocket-Version", "13")
+                .header(
+                    "Sec-WebSocket-Key",
+                    tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+                )
+                .body(())?;
+
+            match connect_async(request).await {
+                Ok((ws, _)) => {
+                    self.ws = Some(ws);
+                    tracing::info!("AssemblyAI WebSocket connected");
+                    return Ok(());
+                }
+                Err(e) if attempt < 2 => {
+                    tracing::warn!(
+                        "AssemblyAI connect failed (attempt {}/3): {}",
+                        attempt + 1,
+                        e
+                    );
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        1000 * 2u64.pow(attempt - 1),
+                    ))
+                    .await;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
     }
 
     async fn send_audio(&mut self, chunk: &[u8]) -> Result<()> {
