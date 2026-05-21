@@ -667,177 +667,52 @@ impl PipelineHandle {
             .unwrap_or_else(|e| e.into_inner())
             .take();
 
+        // Extract session token before releasing guard (for cloud LLM)
+        let session_token = if config.llm_provider == "cloud" {
+            self.app_handle
+                .state::<SessionTokenStore>()
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+        } else {
+            String::new()
+        };
+
         // All shared state has been taken — release the lock so a new start()
         // isn't blocked by the long stt_done wait that follows.
         drop(guard);
 
-        // Always use batch output: keyboard mode uses output_text() after full LLM
-        // response arrives. Streaming chunk-by-chunk clipboard paste was unreliable
-        // on Windows — each Ctrl+V is async and the next set_text() could overwrite
-        // the clipboard before the target app processed the previous paste, producing
-        // garbled output that differed from what History recorded.
-
-        // Pre-build LLM provider and Enigo while STT is still processing
-        let pre_llm = if config.polish_enabled
-            && (!config.llm_api_key.is_empty() || config.llm_provider == "cloud")
-        {
-            let llm_api_key = if config.llm_provider == "cloud" {
-                self.app_handle
-                    .state::<SessionTokenStore>()
-                    .0
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .clone()
-            } else {
-                config.llm_api_key.clone()
-            };
-
-            let llm_config = LlmConfig {
-                api_key: llm_api_key,
-                model: config.llm_model.clone(),
-                base_url: config.llm_base_url.clone(),
-                max_tokens: 4096,
-                temperature: 0.3,
-            };
-            let provider =
-                llm::create_provider(&config.llm_provider, Some(self.shared_client.clone()));
-            Some((llm_config, provider))
-        } else {
-            None
+        // ── Phase 1: Wait for STT ──────────────────────────────────────
+        let raw_text = match self.wait_for_stt().await? {
+            Some(text) => text,
+            None => return Ok(()), // aborted or no speech detected
         };
-
-        // Wait for STT task to finish (handles both streaming and file-based providers)
-        // Timeout after 120s to support long recordings
-        let stt_done = self.stt_done.clone();
-        tokio::select! {
-            _ = stt_done.notified() => {
-                tracing::debug!("STT task completed");
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_secs(STT_FINALIZE_TIMEOUT_SECS)) => {
-                tracing::warn!("STT task timed out after {}s, using accumulated text so far", STT_FINALIZE_TIMEOUT_SECS);
-            }
-        }
-
         let stt_elapsed = stop_start.elapsed();
         tracing::info!(
             "[Pipeline Timing] STT finalize: {}ms",
             stt_elapsed.as_millis()
         );
 
-        // Check if pipeline was aborted while waiting for STT
-        if self.abort_flag.load(Ordering::SeqCst) {
-            tracing::info!("Pipeline aborted after STT wait, skipping LLM and output");
-            return Ok(());
-        }
-
-        let raw_text = self
-            .accumulated_text
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .trim()
-            .to_string();
-
-        if raw_text.is_empty() {
-            let _ = self
-                .app_handle
-                .emit("pipeline:error", "No speech detected. Please try again.");
-            self.set_state(PipelineState::Idle);
-            return Ok(());
-        }
-
-        let final_text;
-        let llm_elapsed;
-
-        // Polish with LLM (resources already pre-built)
         // Check abort before entering LLM polish and output
         if self.abort_flag.load(Ordering::SeqCst) {
             tracing::info!("Pipeline aborted before LLM/output");
             return Ok(());
         }
 
-        if let Some((llm_config, provider)) = pre_llm {
-            self.set_state(PipelineState::Polishing);
-            let llm_start = std::time::Instant::now();
-
-            // on_chunk only drives the UI transcript display; actual output happens
-            // in batch after the full response arrives (see output_text below).
-            let app_handle = self.app_handle.clone();
-            let on_chunk: llm::ChunkCallback = Box::new(move |chunk: &str| {
-                let _ = app_handle.emit("llm:chunk", chunk);
-            });
-
-            let req = PolishRequest {
-                raw_text: raw_text.clone(),
-                app_type: app_ctx.app_type,
-                dictionary: dictionary_words,
-                translate_enabled: config.translate_enabled,
-                target_lang: config.target_lang.clone(),
+        // ── Phase 2: LLM polish + output ───────────────────────────────
+        let (final_text, llm_elapsed) = self
+            .polish_text(
+                &raw_text,
+                &config,
+                &app_ctx,
+                dictionary_words,
                 selected_text,
-            };
+                session_token,
+            )
+            .await;
 
-            match provider.polish(&llm_config, &req, Some(&on_chunk)).await {
-                Ok(response) => {
-                    // Check abort after LLM returns — skip output if cancelled during polish
-                    if self.abort_flag.load(Ordering::SeqCst) {
-                        tracing::info!("Pipeline aborted after LLM polish, skipping output");
-                        return Ok(());
-                    }
-                    final_text = response.polished_text;
-                    llm_elapsed = llm_start.elapsed();
-
-                    if let Err(e) = self
-                        .output_text(&final_text, &app_ctx.app_name, &config)
-                        .await
-                    {
-                        tracing::error!("Output failed: {}", e);
-                        let _ = self
-                            .app_handle
-                            .emit("pipeline:error", format!("Output failed: {e}"));
-                    }
-                }
-                Err(e) => {
-                    // Check abort after LLM error — skip fallback output if cancelled
-                    if self.abort_flag.load(Ordering::SeqCst) {
-                        tracing::info!("Pipeline aborted after LLM error, skipping output");
-                        return Ok(());
-                    }
-                    tracing::error!("LLM polish failed: {}, outputting raw text", e);
-                    final_text = raw_text.clone();
-                    llm_elapsed = llm_start.elapsed();
-
-                    let _ = self
-                        .app_handle
-                        .emit("pipeline:error", format!("LLM polishing failed: {e}"));
-                    if let Err(e) = self
-                        .output_text(&final_text, &app_ctx.app_name, &config)
-                        .await
-                    {
-                        tracing::error!("Output failed: {}", e);
-                        let _ = self
-                            .app_handle
-                            .emit("pipeline:error", format!("Output failed: {e}"));
-                    }
-                }
-            }
-
-            tracing::info!(
-                "[Pipeline Timing] LLM polish: {}ms",
-                llm_elapsed.as_millis()
-            );
-        } else {
-            llm_elapsed = std::time::Duration::ZERO;
-            final_text = raw_text.clone();
-            if let Err(e) = self
-                .output_text(&final_text, &app_ctx.app_name, &config)
-                .await
-            {
-                tracing::error!("Output failed: {}", e);
-                let _ = self
-                    .app_handle
-                    .emit("pipeline:error", format!("Output failed: {e}"));
-            }
-        }
-
+        // ── Phase 3: Timing, history, cleanup ──────────────────────────
         let total_elapsed = stop_start.elapsed();
 
         // Compute recording duration
@@ -868,14 +743,185 @@ impl PipelineHandle {
         );
 
         // Save to history
+        self.save_history(&raw_text, &final_text, &app_ctx, duration_ms)
+            .await;
+
+        self.set_state(PipelineState::Idle);
+        Ok(())
+    }
+
+    /// Wait for the STT task to complete and return the transcribed text.
+    /// Returns `Ok(Some(text))` on success, `Ok(None)` if aborted or no speech,
+    /// or `Err` on failure.
+    async fn wait_for_stt(&self) -> Result<Option<String>> {
+        let stt_done = self.stt_done.clone();
+        tokio::select! {
+            _ = stt_done.notified() => {
+                tracing::debug!("STT task completed");
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(STT_FINALIZE_TIMEOUT_SECS)) => {
+                tracing::warn!("STT timed out after {}s", STT_FINALIZE_TIMEOUT_SECS);
+            }
+        }
+
+        if self.abort_flag.load(Ordering::SeqCst) {
+            tracing::info!("Pipeline aborted after STT wait");
+            return Ok(None);
+        }
+
+        let raw_text = self
+            .accumulated_text
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .trim()
+            .to_string();
+
+        if raw_text.is_empty() {
+            let _ = self.app_handle.emit(
+                "pipeline:error",
+                "No speech detected. Please try again.",
+            );
+            self.set_state(PipelineState::Idle);
+            return Ok(None);
+        }
+
+        Ok(Some(raw_text))
+    }
+
+    /// Polish raw text with LLM and output the result.
+    /// Returns (final_text, llm_elapsed_duration).
+    async fn polish_text(
+        &self,
+        raw_text: &str,
+        config: &storage::AppConfig,
+        app_ctx: &app_detector::AppContext,
+        dictionary_words: Vec<String>,
+        selected_text: Option<String>,
+        session_token: String,
+    ) -> (String, std::time::Duration) {
+        // Check if polish is enabled and API key / token is available
+        if !config.polish_enabled
+            || (config.llm_api_key.is_empty() && config.llm_provider != "cloud")
+        {
+            // No polishing — output raw text directly
+            if let Err(e) = self
+                .output_text(raw_text, &app_ctx.app_name, config)
+                .await
+            {
+                tracing::error!("Output failed: {}", e);
+                let _ = self
+                    .app_handle
+                    .emit("pipeline:error", format!("Output failed: {e}"));
+            }
+            return (raw_text.to_string(), std::time::Duration::ZERO);
+        }
+
+        self.set_state(PipelineState::Polishing);
+        let llm_start = std::time::Instant::now();
+
+        let llm_api_key = if config.llm_provider == "cloud" {
+            session_token
+        } else {
+            config.llm_api_key.clone()
+        };
+
+        let llm_config = LlmConfig {
+            api_key: llm_api_key,
+            model: config.llm_model.clone(),
+            base_url: config.llm_base_url.clone(),
+            max_tokens: 4096,
+            temperature: 0.3,
+        };
+        let provider =
+            llm::create_provider(&config.llm_provider, Some(self.shared_client.clone()));
+
+        // on_chunk only drives the UI transcript display; actual output happens
+        // in batch after the full response arrives (see output_text below).
+        let app_handle = self.app_handle.clone();
+        let on_chunk: llm::ChunkCallback = Box::new(move |chunk: &str| {
+            let _ = app_handle.emit("llm:chunk", chunk);
+        });
+
+        let req = PolishRequest {
+            raw_text: raw_text.to_string(),
+            app_type: app_ctx.app_type,
+            dictionary: dictionary_words,
+            translate_enabled: config.translate_enabled,
+            target_lang: config.target_lang.clone(),
+            selected_text,
+        };
+
+        let (final_text, llm_elapsed) = match provider
+            .polish(&llm_config, &req, Some(&on_chunk))
+            .await
+        {
+            Ok(response) => {
+                // Check abort after LLM returns — skip output if cancelled during polish
+                if self.abort_flag.load(Ordering::SeqCst) {
+                    tracing::info!("Pipeline aborted after LLM polish, skipping output");
+                    return (raw_text.to_string(), llm_start.elapsed());
+                }
+                let elapsed = llm_start.elapsed();
+                if let Err(e) = self
+                    .output_text(&response.polished_text, &app_ctx.app_name, config)
+                    .await
+                {
+                    tracing::error!("Output failed: {}", e);
+                    let _ = self
+                        .app_handle
+                        .emit("pipeline:error", format!("Output failed: {e}"));
+                }
+                (response.polished_text, elapsed)
+            }
+            Err(e) => {
+                // Check abort after LLM error — skip fallback output if cancelled
+                if self.abort_flag.load(Ordering::SeqCst) {
+                    tracing::info!("Pipeline aborted after LLM error, skipping output");
+                    return (raw_text.to_string(), llm_start.elapsed());
+                }
+                tracing::error!("LLM polish failed: {}, outputting raw text", e);
+                let elapsed = llm_start.elapsed();
+
+                let _ = self
+                    .app_handle
+                    .emit("pipeline:error", format!("LLM polishing failed: {e}"));
+                if let Err(e) = self
+                    .output_text(raw_text, &app_ctx.app_name, config)
+                    .await
+                {
+                    tracing::error!("Output failed: {}", e);
+                    let _ = self
+                        .app_handle
+                        .emit("pipeline:error", format!("Output failed: {e}"));
+                }
+                (raw_text.to_string(), elapsed)
+            }
+        };
+
+        tracing::info!(
+            "[Pipeline Timing] LLM polish: {}ms",
+            llm_elapsed.as_millis()
+        );
+
+        (final_text, llm_elapsed)
+    }
+
+    /// Save the transcription to history.
+    async fn save_history(
+        &self,
+        raw_text: &str,
+        final_text: &str,
+        app_ctx: &app_detector::AppContext,
+        duration_ms: Option<i64>,
+    ) {
         let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
         let entry = storage::HistoryEntry {
             id: 0, // auto-increment
             created_at: now,
-            app_name: app_ctx.app_name,
+            app_name: app_ctx.app_name.clone(),
             app_type: format!("{:?}", app_ctx.app_type),
-            raw_text,
-            polished_text: final_text,
+            raw_text: raw_text.to_string(),
+            polished_text: final_text.to_string(),
             language: None,
             duration_ms,
         };
@@ -887,9 +933,6 @@ impl PipelineHandle {
         {
             tracing::error!("Failed to save history: {}", e);
         }
-
-        self.set_state(PipelineState::Idle);
-        Ok(())
     }
 
     async fn output_text(
