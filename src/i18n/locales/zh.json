@@ -236,5 +236,14 @@
     "somethingWentWrong": "出了点问题",
     "unexpectedError": "发生了意外错误。",
     "reload": "重新加载"
+  },
+  "errors": {
+    "stt_invalid_key": "API Key 无效，请检查设置",
+    "stt_timeout": "网络连接超时，正在重试...",
+    "stt_failed": "语音识别失败，请检查网络连接",
+    "llm_failed": "文本润色失败，原始转录已保存",
+    "output_fallback_clipboard": "已复制到剪贴板，请手动粘贴",
+    "output_wayland_unsupported": "Wayland 不支持键盘输出，已切换为剪贴板模式",
+    "output_xdotool_missing": "未找到 xdotool，请安装以使用键盘输出：sudo apt install xdotool"
   }
 }

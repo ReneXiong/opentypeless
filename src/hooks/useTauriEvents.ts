@@ -1,10 +1,13 @@
 import { useEffect } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../stores/appStore'
 import type { PipelineState } from '../stores/appStore'
 import { getHistory } from '../lib/tauri'
+import { toast } from '../components/Toast'
 
 export function useTauriEvents() {
+  const { t } = useTranslation()
   const {
     setAudioVolume,
     setPartialTranscript,
@@ -57,11 +60,22 @@ export function useTauriEvents() {
       }
     })
     addListener<string>('pipeline:target_app', setTargetApp)
-    addListener<string>('pipeline:error', (error) => {
-      setPipelineError(error)
-      if (error === 'ACCESSIBILITY_REQUIRED') {
-        setAccessibilityTrusted(false)
+    addListener<string | { code: string; details?: string; retry_count: number }>(
+      'pipeline:error',
+      (payload) => {
+        const message =
+          typeof payload === 'string'
+            ? payload
+            : t(`errors.${payload.code}`, { details: payload.details ?? '' })
+        setPipelineError(message)
+        if (message === 'ACCESSIBILITY_REQUIRED' || (typeof payload === 'string' && payload === 'ACCESSIBILITY_REQUIRED')) {
+          setAccessibilityTrusted(false)
+        }
       }
+    )
+    addListener<{ code: string; details?: string }>('pipeline:warning', (payload) => {
+      const message = t(`errors.${payload.code}`, { details: payload.details ?? '' })
+      toast(message, 'info')
     })
 
     addListener<void>('tray:settings', () => {
@@ -91,5 +105,6 @@ export function useTauriEvents() {
     setPipelineError,
     setAccessibilityTrusted,
     setHistory,
+    t,
   ])
 }

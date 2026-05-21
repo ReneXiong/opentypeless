@@ -236,5 +236,14 @@
     "somethingWentWrong": "Something went wrong",
     "unexpectedError": "An unexpected error occurred.",
     "reload": "Reload"
+  },
+  "errors": {
+    "stt_invalid_key": "Invalid API Key, please check settings",
+    "stt_timeout": "Connection timeout, retrying...",
+    "stt_failed": "Speech recognition failed, please check your network",
+    "llm_failed": "Text polish failed, raw transcription saved",
+    "output_fallback_clipboard": "Copied to clipboard, paste manually",
+    "output_wayland_unsupported": "Keyboard output unsupported on Wayland, switched to clipboard mode",
+    "output_xdotool_missing": "xdotool not found, install it for keyboard output: sudo apt install xdotool"
   }
 }
