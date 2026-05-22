@@ -71,10 +71,10 @@ pub fn request_accessibility_permission() -> bool {
         // kCFStringEncodingUTF8 = 0x08000100
         const K_CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
+        #[allow(clippy::manual_c_str_literals)]
         unsafe {
             let key = CFStringCreateWithCString(
                 std::ptr::null_mut(),
-                #[allow(clippy::manual_c_str_literals)]
                 b"kAXTrustedCheckOptionPrompt\0".as_ptr() as *const i8,
                 K_CF_STRING_ENCODING_UTF8,
             );
