@@ -74,6 +74,7 @@ pub fn request_accessibility_permission() -> bool {
         unsafe {
             let key = CFStringCreateWithCString(
                 std::ptr::null_mut(),
+                #[allow(clippy::manual_c_str_literals)]
                 b"kAXTrustedCheckOptionPrompt\0".as_ptr() as *const i8,
                 K_CF_STRING_ENCODING_UTF8,
             );
