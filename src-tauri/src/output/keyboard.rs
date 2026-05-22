@@ -19,15 +19,14 @@ pub fn check_keyboard_available() -> std::result::Result<(), String> {
         if session == "wayland" {
             return Err("wayland_unsupported".to_string());
         }
-        if session == "x11" || session.is_empty() {
-            if std::process::Command::new("which")
+        if (session == "x11" || session.is_empty())
+            && std::process::Command::new("which")
                 .arg("xdotool")
                 .output()
                 .map(|o| !o.status.success())
                 .unwrap_or(true)
-            {
-                return Err("xdotool_missing".to_string());
-            }
+        {
+            return Err("xdotool_missing".to_string());
         }
     }
     let _ = (); // suppress unused warning on non-Linux
