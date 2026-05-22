@@ -954,7 +954,7 @@ impl PipelineHandle {
         }
 
         // Linux: check keyboard availability before attempting
-        if mode == OutputMode::Keyboard {
+        let effective_mode = if mode == OutputMode::Keyboard {
             if let Err(reason) = output::keyboard::check_keyboard_available() {
                 if reason == "wayland_unsupported" {
                     tracing::warn!("Keyboard output not supported on Wayland, falling back to clipboard");
@@ -964,18 +964,19 @@ impl PipelineHandle {
                         retry_count: 0,
                     };
                     let _ = self.app_handle.emit("pipeline:warning", &ue);
-                    // Retry with clipboard mode
-                    let clipboard_config = storage::AppConfig {
-                        output_mode: "clipboard".to_string(),
-                        ..config.clone()
-                    };
-                    return self.output_text(text, app_name, &clipboard_config).await;
+                    OutputMode::Clipboard
+                } else {
+                    tracing::warn!("xdotool not found, keyboard output may fail: {}", reason);
+                    mode
                 }
-                tracing::warn!("xdotool not found, keyboard output may fail: {}", reason);
+            } else {
+                mode
             }
-        }
+        } else {
+            mode
+        };
 
-        match output::output_with_fallback(text, mode).await {
+        match output::output_with_fallback(text, effective_mode).await {
             Ok(Some(user_error)) => {
                 tracing::info!("Output fell back to clipboard");
                 let _ = self.app_handle.emit("pipeline:warning", &user_error);

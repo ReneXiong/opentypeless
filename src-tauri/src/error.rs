@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::time::Duration;
+use tauri::Emitter;
 
 /// Structured error sent to the frontend via Tauri events.
 /// The frontend uses `code` to look up an i18n-translated message.
@@ -38,7 +39,7 @@ impl AppError {
         let (code, details) = match self {
             AppError::Network(msg) => ("stt_timeout".to_string(), Some(msg.clone())),
             AppError::Timeout(_) => ("stt_timeout".to_string(), None),
-            AppError::Api { status, body } => {
+            AppError::Api { status, body: _ } => {
                 if *status == 401 || *status == 403 {
                     ("stt_invalid_key".to_string(), None)
                 } else {

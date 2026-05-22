@@ -14,7 +14,7 @@ pub use hotkey::{default_shortcut, parse_hotkey};
 pub use tray::{TrayHandle, refresh_tray};
 
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_store::StoreExt;
@@ -32,10 +32,10 @@ pub fn api_base_url() -> String {
 
 /// Cached hotkey mode to avoid loading config from disk on every keypress.
 /// Updated whenever config is saved.
-pub(crate) struct HotkeyModeCache(pub Arc<Mutex<String>>);
+pub struct HotkeyModeCache(pub Arc<Mutex<String>>);
 
 /// Cached close_to_tray setting to avoid blocking I/O in the window close handler.
-pub(crate) struct CloseToTrayCache(pub Arc<Mutex<bool>>);
+pub struct CloseToTrayCache(pub Arc<Mutex<bool>>);
 
 /// Session token for cloud providers. Set by the frontend after Better Auth login.
 /// The Rust pipeline reads this when creating cloud STT/LLM providers.

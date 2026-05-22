@@ -155,7 +155,7 @@ impl SttProvider for WhisperCompatProvider {
 
             let resp_result = self
                 .client
-                .post(self.provider_config.endpoint)
+                .post(&self.provider_config.endpoint)
                 .header("Authorization", format!("Bearer {}", config.api_key))
                 .multipart(form)
                 .timeout(std::time::Duration::from_secs(60))
