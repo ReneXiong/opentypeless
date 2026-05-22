@@ -39,6 +39,7 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,
+        "visibleOnAllWorkspaces": true,
         "url": "index.html#capsule"
       }
     ],
