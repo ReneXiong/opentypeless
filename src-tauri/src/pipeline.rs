@@ -35,64 +35,21 @@ pub fn is_accessibility_trusted() -> bool {
     }
 }
 
-/// On macOS, request Accessibility permission by showing the system authorization dialog.
-/// Uses AXIsProcessTrustedWithOptions with kAXTrustedCheckOptionPrompt = true.
-/// Returns true if permission is already granted or on non-macOS platforms.
+/// On macOS, request Accessibility permission by opening System Settings
+/// to the Accessibility privacy pane. Returns true if permission is already granted
+/// or on non-macOS platforms.
 pub fn request_accessibility_permission() -> bool {
     #[cfg(target_os = "macos")]
     {
-        #[link(name = "ApplicationServices", kind = "framework")]
-        extern "C" {
-            fn AXIsProcessTrustedWithOptions(options: *mut std::ffi::c_void) -> u8;
+        if is_accessibility_trusted() {
+            return true;
         }
-        #[link(name = "CoreFoundation", kind = "framework")]
-        extern "C" {
-            fn CFDictionaryCreate(
-                allocator: *mut std::ffi::c_void,
-                keys: *const *mut std::ffi::c_void,
-                values: *const *mut std::ffi::c_void,
-                num_values: isize,
-                key_callbacks: *const std::ffi::c_void,
-                value_callbacks: *const std::ffi::c_void,
-            ) -> *mut std::ffi::c_void;
-            fn CFStringCreateWithCString(
-                allocator: *mut std::ffi::c_void,
-                c_str: *const i8,
-                encoding: u32,
-            ) -> *mut std::ffi::c_void;
-            static kCFTypeDictionaryKeyCallBacks: std::ffi::c_void;
-            static kCFTypeDictionaryValueCallBacks: std::ffi::c_void;
-        }
-        // kCFBooleanTrue — we link CoreFoundation and use the known address pattern
-        #[link(name = "CoreFoundation", kind = "framework")]
-        extern "C" {
-            static kCFBooleanTrue: *mut std::ffi::c_void;
-        }
-        // kCFStringEncodingUTF8 = 0x08000100
-        const K_CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
-
-        #[allow(clippy::manual_c_str_literals)]
-        unsafe {
-            let key = CFStringCreateWithCString(
-                std::ptr::null_mut(),
-                b"kAXTrustedCheckOptionPrompt\0".as_ptr() as *const i8,
-                K_CF_STRING_ENCODING_UTF8,
-            );
-            let value = kCFBooleanTrue;
-
-            let options = CFDictionaryCreate(
-                std::ptr::null_mut(),
-                &[key] as *const *mut std::ffi::c_void,
-                &[value] as *const *mut std::ffi::c_void,
-                1,
-                &kCFTypeDictionaryKeyCallBacks as *const std::ffi::c_void,
-                &kCFTypeDictionaryValueCallBacks as *const std::ffi::c_void,
-            );
-
-            let trusted = AXIsProcessTrustedWithOptions(options);
-            // options is leaked (trivial — called at most a few times)
-            trusted != 0
-        }
+        // AXIsProcessTrustedWithOptions crashes on macOS 26.5, so we open
+        // System Settings directly and let the user add the app manually.
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .status();
+        false
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -247,18 +204,24 @@ impl PipelineHandle {
         let mut clipboard = arboard::Clipboard::new().ok()?;
         let backup = clipboard.get_text().ok();
 
-        if let Ok(mut enigo) = Enigo::new(&EnigoSettings::default()) {
+        // macOS 26.5 requires TSM APIs (used by Enigo::new()) to run on the
+        // main dispatch queue. Dispatch the Enigo creation + Cmd+C simulation
+        // to the main thread.
+        let app_handle = self.app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            let mut enigo = match Enigo::new(&EnigoSettings::default()) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
             #[cfg(target_os = "macos")]
             let modifier = Key::Meta;
             #[cfg(not(target_os = "macos"))]
             let modifier = Key::Control;
 
-            let pressed = enigo.key(modifier, Direction::Press).is_ok();
-            if pressed {
-                let _ = enigo.key(Key::Unicode('c'), Direction::Click);
-                let _ = enigo.key(modifier, Direction::Release);
-            }
-        }
+            let _ = enigo.key(modifier, Direction::Press);
+            let _ = enigo.key(Key::Unicode('c'), Direction::Click);
+            let _ = enigo.key(modifier, Direction::Release);
+        });
 
         std::thread::sleep(std::time::Duration::from_millis(CLIPBOARD_COPY_SETTLE_MS));
 
@@ -513,28 +476,60 @@ impl PipelineHandle {
 
         tokio::spawn(async move {
             // Forward audio to STT and receive transcripts
+            let mut audio_chunks_sent: u64 = 0;
+            let mut audio_bytes_sent: u64 = 0;
+            let mut last_partial = String::new();
             loop {
                 tokio::select! {
                     chunk = audio_rx.recv() => {
                         match chunk {
                             Some(data) => {
-                                let _ = provider.send_audio(&data).await;
+                                audio_chunks_sent += 1;
+                                audio_bytes_sent += data.len() as u64;
+                                if audio_chunks_sent == 1 || audio_chunks_sent.is_multiple_of(100) {
+                                    tracing::debug!(
+                                        "STT audio: {} chunks sent, {} bytes total",
+                                        audio_chunks_sent, audio_bytes_sent
+                                    );
+                                }
+                                if let Err(e) = provider.send_audio(&data).await {
+                                    tracing::error!("STT send_audio error: {}", e);
+                                    break;
+                                }
                             }
                             None => {
+                                tracing::debug!(
+                                    "Audio channel closed after {} chunks ({} bytes)",
+                                    audio_chunks_sent, audio_bytes_sent
+                                );
                                 // Audio channel closed — disconnect and capture final transcript
-                                match provider.disconnect().await {
-                                    Ok(Some(text)) => {
-                                        let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
-                                        acc.push_str(&text);
-                                        let current = acc.clone();
-                                        drop(acc);
-                                        let _ = app_handle.emit("stt:final", &current);
-                                    }
-                                    Ok(None) => {}
+                                let disconnect_result = provider.disconnect().await;
+                                let disconnect_text = match disconnect_result {
+                                    Ok(Some(text)) => Some(text),
+                                    Ok(None) => None,
                                     Err(e) => {
                                         tracing::error!("STT disconnect error: {}", e);
                                         let _ = app_handle.emit("pipeline:error", format!("STT error: {e}"));
+                                        None
                                     }
+                                };
+
+                                // Use disconnect text if available, otherwise use last partial
+                                let final_text = disconnect_text.unwrap_or_else(|| {
+                                    if !last_partial.is_empty() {
+                                        tracing::info!("STT using last partial: {:?}", last_partial);
+                                        last_partial.clone()
+                                    } else {
+                                        String::new()
+                                    }
+                                });
+
+                                if !final_text.is_empty() {
+                                    let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
+                                    acc.push_str(&final_text);
+                                    let current = acc.clone();
+                                    drop(acc);
+                                    let _ = app_handle.emit("stt:final", &current);
                                 }
                                 break;
                             }
@@ -543,11 +538,26 @@ impl PipelineHandle {
                     transcript = provider.recv_transcript() => {
                         match transcript {
                             Ok(Some(TranscriptEvent::Partial { text })) => {
+                                tracing::debug!("STT partial: {:?}", text);
+                                last_partial = text.clone();
                                 let _ = app_handle.emit("stt:partial", &text);
                             }
                             Ok(Some(TranscriptEvent::Final { text, .. })) => {
+                                tracing::info!("STT final: {:?}", text);
+                                // Deepgram sometimes sends a truncated final that is shorter
+                                // than the last partial. If so, use the partial instead.
+                                let text_to_use = if !last_partial.is_empty() && text.len() < last_partial.len() {
+                                    tracing::warn!(
+                                        "STT final shorter than last partial, using partial: {:?}",
+                                        last_partial
+                                    );
+                                    last_partial.clone()
+                                } else {
+                                    text
+                                };
+                                last_partial.clear();
                                 let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
-                                acc.push_str(&text);
+                                acc.push_str(&text_to_use);
                                 acc.push(' ');
                                 let current = acc.clone();
                                 drop(acc);
@@ -974,7 +984,7 @@ impl PipelineHandle {
             mode
         };
 
-        match output::output_with_fallback(text, effective_mode).await {
+        match output::output_with_fallback(&self.app_handle, text, effective_mode).await {
             Ok(Some(user_error)) => {
                 tracing::info!("Output fell back to clipboard");
                 let _ = self.app_handle.emit("pipeline:warning", &user_error);
