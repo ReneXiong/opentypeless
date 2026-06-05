@@ -53,6 +53,26 @@ describe('useRecording', () => {
     expect(invoke).not.toHaveBeenCalled()
   })
 
+  it('calls resetRecording before tauriStartRecording', async () => {
+    const { startRecording: tauriStartRecording } = await import('../../lib/tauri')
+    const callOrder: string[] = []
+
+    vi.spyOn(useAppStore.getState(), 'resetRecording').mockImplementation(() => {
+      callOrder.push('resetRecording')
+    })
+    vi.mocked(tauriStartRecording).mockImplementation(async () => {
+      callOrder.push('tauriStartRecording')
+    })
+
+    const { result } = renderHook(() => useRecording())
+
+    await act(async () => {
+      await result.current.startRecording()
+    })
+
+    expect(callOrder).toEqual(['resetRecording', 'tauriStartRecording'])
+  })
+
   it('returns correct derived state for idle', () => {
     const { result } = renderHook(() => useRecording())
 
