@@ -204,24 +204,48 @@ impl PipelineHandle {
         let mut clipboard = arboard::Clipboard::new().ok()?;
         let backup = clipboard.get_text().ok();
 
-        // macOS 26.5 requires TSM APIs (used by Enigo::new()) to run on the
-        // main dispatch queue. Dispatch the Enigo creation + Cmd+C simulation
-        // to the main thread.
-        let app_handle = self.app_handle.clone();
-        let _ = app_handle.run_on_main_thread(move || {
-            let mut enigo = match Enigo::new(&EnigoSettings::default()) {
-                Ok(e) => e,
-                Err(_) => return,
-            };
-            #[cfg(target_os = "macos")]
-            let modifier = Key::Meta;
-            #[cfg(not(target_os = "macos"))]
-            let modifier = Key::Control;
-
-            let _ = enigo.key(modifier, Direction::Press);
-            let _ = enigo.key(Key::Unicode('c'), Direction::Click);
-            let _ = enigo.key(modifier, Direction::Release);
-        });
+        // Use osascript to simulate Cmd+C on macOS to avoid triggering
+        // the Chinese input method (Enigo's CGEventPost interferes with it).
+        // macOS 26.5 also requires TSM APIs (used by Enigo::new()) to run on
+        // the main dispatch queue, so the Enigo fallback uses run_on_main_thread.
+        #[cfg(target_os = "macos")]
+        {
+            let status = std::process::Command::new("osascript")
+                .args([
+                    "-e",
+                    r#"tell application "System Events" to keystroke "c" using command down"#,
+                ])
+                .status();
+            match status {
+                Ok(s) if s.success() => {}
+                _ => {
+                    tracing::warn!("osascript Cmd+C failed, falling back to Enigo");
+                    let app_handle = self.app_handle.clone();
+                    let _ = app_handle.run_on_main_thread(move || {
+                        let mut enigo = match Enigo::new(&EnigoSettings::default()) {
+                            Ok(e) => e,
+                            Err(_) => return,
+                        };
+                        let _ = enigo.key(Key::Meta, Direction::Press);
+                        let _ = enigo.key(Key::Unicode('c'), Direction::Click);
+                        let _ = enigo.key(Key::Meta, Direction::Release);
+                    });
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let app_handle = self.app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                let mut enigo = match Enigo::new(&EnigoSettings::default()) {
+                    Ok(e) => e,
+                    Err(_) => return,
+                };
+                let _ = enigo.key(Key::Control, Direction::Press);
+                let _ = enigo.key(Key::Unicode('c'), Direction::Click);
+                let _ = enigo.key(Key::Control, Direction::Release);
+            });
+        }
 
         std::thread::sleep(std::time::Duration::from_millis(CLIPBOARD_COPY_SETTLE_MS));
 
