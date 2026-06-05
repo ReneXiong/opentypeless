@@ -37,7 +37,7 @@ impl AppError {
 
     pub fn to_user_error(&self) -> UserError {
         let (code, details) = match self {
-            AppError::Network(msg) => ("stt_timeout".to_string(), Some(msg.clone())),
+            AppError::Network(msg) => ("stt_network".to_string(), Some(msg.clone())),
             AppError::Timeout(_) => ("stt_timeout".to_string(), None),
             AppError::Api { status, body: _ } => {
                 if *status == 401 || *status == 403 {
@@ -241,10 +241,10 @@ mod tests {
     }
 
     #[test]
-    fn test_network_maps_to_timeout_code() {
-        let err = AppError::Network("timeout".to_string());
+    fn test_network_maps_to_network_code() {
+        let err = AppError::Network("connection reset".to_string());
         let ue = err.to_user_error();
-        assert_eq!(ue.code, "stt_timeout");
+        assert_eq!(ue.code, "stt_network");
     }
 
     #[test]
