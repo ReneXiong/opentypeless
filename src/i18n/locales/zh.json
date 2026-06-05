@@ -240,6 +240,7 @@
   "errors": {
     "stt_invalid_key": "API Key 无效，请检查设置",
     "stt_timeout": "网络连接超时，正在重试...",
+    "stt_network": "网络错误，正在重试...",
     "stt_failed": "语音识别失败，请检查网络连接",
     "llm_failed": "文本润色失败，原始转录已保存",
     "output_fallback_clipboard": "已复制到剪贴板，请手动粘贴",
