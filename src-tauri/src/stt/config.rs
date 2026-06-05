@@ -111,19 +111,25 @@ mod tests {
     #[test]
     fn test_get_stt_endpoint_deepgram() {
         let ep = get_stt_endpoint("deepgram").unwrap();
-        assert!(ep.contains("deepgram.com"));
+        assert_eq!(ep, "https://api.deepgram.com/v1/listen");
     }
 
     #[test]
     fn test_get_stt_endpoint_assemblyai() {
         let ep = get_stt_endpoint("assemblyai").unwrap();
-        assert!(ep.contains("assemblyai.com"));
+        assert_eq!(ep, "https://api.assemblyai.com/v2/transcript");
     }
 
     #[test]
     fn test_get_stt_endpoint_whisper_compat() {
         let ep = get_stt_endpoint("glm-asr").unwrap();
-        assert!(ep.contains("bigmodel.cn"));
+        assert_eq!(ep, "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions");
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_openai_whisper() {
+        let ep = get_stt_endpoint("openai-whisper").unwrap();
+        assert_eq!(ep, "https://api.openai.com/v1/audio/transcriptions");
     }
 
     #[test]
