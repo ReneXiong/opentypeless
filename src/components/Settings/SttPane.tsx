@@ -38,7 +38,15 @@ export function SttPane() {
         <select
           value={config.stt_provider}
           onChange={(e) => {
-            updateConfig({ stt_provider: e.target.value as typeof config.stt_provider })
+            const newProvider = e.target.value as typeof config.stt_provider
+            // Save current provider's key to map, load new provider's key
+            const newKeys = { ...config.stt_api_keys }
+            newKeys[config.stt_provider] = config.stt_api_key
+            updateConfig({
+              stt_provider: newProvider,
+              stt_api_key: newKeys[newProvider] ?? '',
+              stt_api_keys: newKeys,
+            })
             setSttTestStatus('idle')
             setSttLatencyMs(null)
           }}
@@ -73,7 +81,8 @@ export function SttPane() {
               type="password"
               value={config.stt_api_key}
               onChange={(e) => {
-                updateConfig({ stt_api_key: e.target.value })
+                const newKeys = { ...config.stt_api_keys, [config.stt_provider]: e.target.value }
+                updateConfig({ stt_api_key: e.target.value, stt_api_keys: newKeys })
                 setSttTestStatus('idle')
                 setSttLatencyMs(null)
               }}

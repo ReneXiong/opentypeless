@@ -86,8 +86,13 @@ export function LlmPane() {
           onChange={(e) => {
             const provider = e.target.value as typeof config.llm_provider
             const defaults = LLM_DEFAULT_CONFIG[provider]
+            // Save current provider's key to map, load new provider's key
+            const newKeys = { ...config.llm_api_keys }
+            newKeys[config.llm_provider] = config.llm_api_key
             updateConfig({
               llm_provider: provider,
+              llm_api_key: newKeys[provider] ?? '',
+              llm_api_keys: newKeys,
               llm_base_url: defaults?.baseUrl ?? config.llm_base_url,
               llm_model: defaults?.model ?? config.llm_model,
             })
@@ -127,7 +132,8 @@ export function LlmPane() {
                 type="password"
                 value={config.llm_api_key}
                 onChange={(e) => {
-                  updateConfig({ llm_api_key: e.target.value })
+                  const newKeys = { ...config.llm_api_keys, [config.llm_provider]: e.target.value }
+                  updateConfig({ llm_api_key: e.target.value, llm_api_keys: newKeys })
                   setLlmTestStatus('idle')
                   setLlmLatencyMs(null)
                 }}

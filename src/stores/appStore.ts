@@ -66,6 +66,10 @@ export interface AppConfig {
   max_recording_seconds: number
   ui_language: string
   capsule_auto_hide: boolean
+  /** Per-provider API keys for STT providers (keyed by provider name). */
+  stt_api_keys: Record<string, string>
+  /** Per-provider API keys for LLM providers (keyed by provider name). */
+  llm_api_keys: Record<string, string>
 }
 
 export type TestStatus = 'idle' | 'testing' | 'success' | 'error'
@@ -179,6 +183,8 @@ const defaultConfig: AppConfig = {
   max_recording_seconds: 30,
   ui_language: 'en',
   capsule_auto_hide: false,
+  stt_api_keys: {},
+  llm_api_keys: {},
 }
 
 export const useAppStore = create<AppState>((set) => ({

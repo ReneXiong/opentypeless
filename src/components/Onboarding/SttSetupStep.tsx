@@ -25,7 +25,14 @@ export function SttSetupStep() {
         <select
           value={config.stt_provider}
           onChange={(e) => {
-            updateConfig({ stt_provider: e.target.value as typeof config.stt_provider })
+            const newProvider = e.target.value as typeof config.stt_provider
+            const newKeys = { ...config.stt_api_keys }
+            newKeys[config.stt_provider] = config.stt_api_key
+            updateConfig({
+              stt_provider: newProvider,
+              stt_api_key: newKeys[newProvider] ?? '',
+              stt_api_keys: newKeys,
+            })
             setSttTestStatus('idle')
           }}
           className="w-full px-3 py-2.5 bg-bg-secondary border border-border rounded-[10px] text-[13px] text-text-primary outline-none focus:border-border-focus transition-colors"
@@ -44,7 +51,8 @@ export function SttSetupStep() {
             type="password"
             value={config.stt_api_key}
             onChange={(e) => {
-              updateConfig({ stt_api_key: e.target.value })
+              const newKeys = { ...config.stt_api_keys, [config.stt_provider]: e.target.value }
+              updateConfig({ stt_api_key: e.target.value, stt_api_keys: newKeys })
               setSttTestStatus('idle')
             }}
             placeholder="Enter API Key..."
