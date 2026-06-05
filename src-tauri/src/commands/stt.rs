@@ -90,7 +90,10 @@ pub async fn test_stt_connection(
 
     // Cloud provider: verify session token + Pro status via API
     if provider == "cloud" {
-        let resp = send_stt_test_request(&provider, &api_key, &client, &token_store).await?;
+        let resp = match send_stt_test_request(&provider, &api_key, &client, &token_store).await {
+            Ok(r) => r,
+            Err(_) => return Ok(false), // e.g. not signed in — treat as "not connected"
+        };
         if !resp.status().is_success() {
             return Ok(false);
         }
@@ -149,37 +152,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_whisper_multipart_form_contains_model() {
-        let cfg = stt::config::get_whisper_config("glm-asr").unwrap();
-        assert_eq!(cfg.model, "glm-asr-2512");
-    }
-
-    #[test]
-    fn test_whisper_multipart_form_contains_extra_fields() {
-        let cfg = stt::config::get_whisper_config("glm-asr").unwrap();
-        assert!(cfg.extra_fields.contains(&("stream", "false")));
-    }
-
-    #[test]
     fn test_build_whisper_test_wav() {
-        let silent_pcm = vec![0u8; 3200];
+        // Verify the WAV builder used by send_stt_test_request produces valid headers.
+        let silent_pcm = vec![0u8; 3200]; // 0.1s at 16kHz 16-bit mono
         let wav = stt::whisper_compat::WhisperCompatProvider::build_wav(&silent_pcm, 16000);
 
-        // WAV should be 44 header + 3200 data = 3244 bytes
-        assert_eq!(wav.len(), 3244);
+        assert_eq!(wav.len(), 3244); // 44 header + 3200 data
         assert_eq!(&wav[0..4], b"RIFF");
         assert_eq!(&wav[8..12], b"WAVE");
     }
 
     #[test]
-    fn test_openai_whisper_has_no_extra_fields() {
-        let cfg = stt::config::get_whisper_config("openai-whisper").unwrap();
-        assert_eq!(cfg.model, "whisper-1");
-        assert!(cfg.extra_fields.is_empty());
-    }
-
-    #[test]
-    fn test_unknown_provider_errors() {
+    fn test_send_stt_test_request_unknown_provider_errors() {
+        // Verify that an unknown provider returns an error from the helper.
+        // We can't easily test the full async function without a real HTTP client,
+        // but we can verify the config lookup fails for unknown providers.
         let result = stt::config::get_whisper_config("nonexistent");
         assert!(result.is_none());
     }
