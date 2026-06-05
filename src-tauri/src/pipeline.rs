@@ -288,6 +288,24 @@ impl PipelineHandle {
             .unwrap_or_default()
     }
 
+    /// Clear all preloaded state and reset pipeline to Idle.
+    /// Called during `start()` setup when an error or abort occurs.
+    fn cleanup_and_reset(&self) {
+        *self
+            .preloaded_config
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        *self
+            .preloaded_app_ctx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        *self
+            .preloaded_dictionary
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        self.set_state(PipelineState::Idle);
+    }
+
     pub async fn start(&self) -> Result<()> {
         // Hold pipeline_lock for the entire setup so stop() cannot read
         // partially-initialised state (preloaded_config, audio_handle, etc.).
@@ -359,19 +377,7 @@ impl PipelineHandle {
                 "pipeline:error",
                 "STT API key is not configured. Please set it in Settings → Speech Recognition.",
             );
-            *self
-                .preloaded_config
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            *self
-                .preloaded_app_ctx
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            *self
-                .preloaded_dictionary
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            self.set_state(PipelineState::Idle);
+            self.cleanup_and_reset();
             return Ok(());
         }
 
@@ -405,19 +411,7 @@ impl PipelineHandle {
             let _ = self
                 .app_handle
                 .emit("pipeline:error", format!("STT connection failed: {e}"));
-            *self
-                .preloaded_config
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            *self
-                .preloaded_app_ctx
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            *self
-                .preloaded_dictionary
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            self.set_state(PipelineState::Idle);
+            self.cleanup_and_reset();
             return Ok(());
         }
 
@@ -430,19 +424,7 @@ impl PipelineHandle {
                 let _ = self
                     .app_handle
                     .emit("pipeline:error", format!("Audio capture failed: {e}"));
-                *self
-                    .preloaded_config
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner()) = None;
-                *self
-                    .preloaded_app_ctx
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner()) = None;
-                *self
-                    .preloaded_dictionary
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner()) = None;
-                self.set_state(PipelineState::Idle);
+                self.cleanup_and_reset();
                 return Ok(());
             }
         };
@@ -453,7 +435,7 @@ impl PipelineHandle {
         if self.abort_flag.load(Ordering::SeqCst) {
             tracing::info!("Pipeline aborted during setup, discarding audio capture");
             // handle drops here, stopping the capture thread
-            self.set_state(PipelineState::Idle);
+            self.cleanup_and_reset();
             return Ok(());
         }
         let audio_vol = handle.get_volume();
