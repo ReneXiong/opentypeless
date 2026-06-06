@@ -13,6 +13,17 @@ pub struct SttProviderConfig {
     pub extra_fields: &'static [(&'static str, &'static str)],
 }
 
+/// Returns the HTTP endpoint URL for any STT provider.
+/// Used by pre_warm() and test_stt_connection() to avoid hardcoding URLs.
+pub fn get_stt_endpoint(provider: &str) -> Option<&'static str> {
+    match provider {
+        "cloud" => None, // resolved at runtime via api_base_url()
+        "deepgram" => Some("https://api.deepgram.com/v1/listen"),
+        "assemblyai" => Some("https://api.assemblyai.com/v2/transcript"),
+        _ => get_whisper_config(provider).map(|c| c.endpoint),
+    }
+}
+
 /// Returns the endpoint, model name, and any extra form fields for a given
 /// Whisper-compatible STT provider.
 pub fn get_whisper_config(provider: &str) -> Option<SttProviderConfig> {
@@ -95,5 +106,39 @@ mod tests {
     #[test]
     fn test_cloud_not_in_whisper_config() {
         assert!(get_whisper_config("cloud").is_none());
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_deepgram() {
+        let ep = get_stt_endpoint("deepgram").unwrap();
+        assert_eq!(ep, "https://api.deepgram.com/v1/listen");
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_assemblyai() {
+        let ep = get_stt_endpoint("assemblyai").unwrap();
+        assert_eq!(ep, "https://api.assemblyai.com/v2/transcript");
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_whisper_compat() {
+        let ep = get_stt_endpoint("glm-asr").unwrap();
+        assert_eq!(ep, "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions");
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_openai_whisper() {
+        let ep = get_stt_endpoint("openai-whisper").unwrap();
+        assert_eq!(ep, "https://api.openai.com/v1/audio/transcriptions");
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_cloud_returns_none() {
+        assert!(get_stt_endpoint("cloud").is_none());
+    }
+
+    #[test]
+    fn test_get_stt_endpoint_unknown_returns_none() {
+        assert!(get_stt_endpoint("nonexistent").is_none());
     }
 }

@@ -1009,24 +1009,17 @@ impl PipelineHandle {
         let config = self.load_config().await;
 
         // Pre-warm STT endpoint
-        let stt_endpoint = match config.stt_provider.as_str() {
-            "cloud" => {
-                let base = crate::api_base_url();
-                format!("{}/api/proxy/stt", base)
-            }
-            "glm-asr" => "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions".to_string(),
-            "openai-whisper" => "https://api.openai.com/v1/audio/transcriptions".to_string(),
-            "groq-whisper" => "https://api.groq.com/openai/v1/audio/transcriptions".to_string(),
-            "siliconflow" => "https://api.siliconflow.cn/v1/audio/transcriptions".to_string(),
-            "deepgram" => "https://api.deepgram.com/v1/listen".to_string(),
-            "assemblyai" => "https://api.assemblyai.com/v2/transcript".to_string(),
-            _ => {
-                tracing::debug!(
-                    "Unknown STT provider '{}', skipping pre-warm",
-                    config.stt_provider
-                );
-                return;
-            }
+        let stt_endpoint = if config.stt_provider == "cloud" {
+            let base = crate::api_base_url();
+            format!("{}/api/proxy/stt", base)
+        } else if let Some(ep) = stt::config::get_stt_endpoint(&config.stt_provider) {
+            ep.to_string()
+        } else {
+            tracing::debug!(
+                "Unknown STT provider '{}', skipping pre-warm",
+                config.stt_provider
+            );
+            return;
         };
         tracing::debug!("Pre-warming HTTP connection to {}", stt_endpoint);
         let _ = self
