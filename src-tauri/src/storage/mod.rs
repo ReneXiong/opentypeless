@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri_plugin_store::StoreExt;
@@ -29,6 +30,10 @@ pub struct AppConfig {
     pub max_recording_seconds: u32,
     pub ui_language: String,
     pub capsule_auto_hide: bool,
+    /// Per-provider API keys for STT providers (keyed by provider name).
+    pub stt_api_keys: HashMap<String, String>,
+    /// Per-provider API keys for LLM providers (keyed by provider name).
+    pub llm_api_keys: HashMap<String, String>,
 }
 
 impl Default for AppConfig {
@@ -58,6 +63,8 @@ impl Default for AppConfig {
             max_recording_seconds: 30,
             ui_language: "en".to_string(),
             capsule_auto_hide: false,
+            stt_api_keys: HashMap::new(),
+            llm_api_keys: HashMap::new(),
         }
     }
 }
@@ -82,13 +89,25 @@ impl ConfigManager {
             return Ok(config);
         }
 
-        let config = match self.app_handle.store("settings.json") {
+        let mut config = match self.app_handle.store("settings.json") {
             Ok(store) => match store.get("app_config") {
                 Some(val) => serde_json::from_value::<AppConfig>(val.clone()).unwrap_or_default(),
                 None => AppConfig::default(),
             },
             Err(_) => AppConfig::default(),
         };
+
+        // Migrate flat API keys into per-provider maps on first run after upgrade
+        if config.stt_api_keys.is_empty() && !config.stt_api_key.is_empty() {
+            config
+                .stt_api_keys
+                .insert(config.stt_provider.clone(), config.stt_api_key.clone());
+        }
+        if config.llm_api_keys.is_empty() && !config.llm_api_key.is_empty() {
+            config
+                .llm_api_keys
+                .insert(config.llm_provider.clone(), config.llm_api_key.clone());
+        }
 
         *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(config.clone());
         Ok(config)

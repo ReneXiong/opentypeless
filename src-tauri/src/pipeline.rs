@@ -390,7 +390,12 @@ impl PipelineHandle {
                 .unwrap_or_else(|e| e.into_inner())
                 .clone()
         } else {
-            config_data.stt_api_key.clone()
+            config_data
+                .stt_api_keys
+                .get(&config_data.stt_provider)
+                .filter(|k| !k.is_empty())
+                .cloned()
+                .unwrap_or_else(|| config_data.stt_api_key.clone())
         };
 
         let stt_config = SttConfig {
@@ -821,8 +826,14 @@ impl PipelineHandle {
         session_token: String,
     ) -> (String, std::time::Duration) {
         // Check if polish is enabled and API key / token is available
+        let effective_llm_key = config
+            .llm_api_keys
+            .get(&config.llm_provider)
+            .filter(|k| !k.is_empty())
+            .cloned()
+            .unwrap_or_else(|| config.llm_api_key.clone());
         if !config.polish_enabled
-            || (config.llm_api_key.is_empty() && config.llm_provider != "cloud")
+            || (effective_llm_key.is_empty() && config.llm_provider != "cloud")
         {
             // No polishing — output raw text directly
             if let Err(e) = self.output_text(raw_text, &app_ctx.app_name, config).await {
@@ -840,7 +851,7 @@ impl PipelineHandle {
         let llm_api_key = if config.llm_provider == "cloud" {
             session_token
         } else {
-            config.llm_api_key.clone()
+            effective_llm_key
         };
 
         let llm_config = LlmConfig {
