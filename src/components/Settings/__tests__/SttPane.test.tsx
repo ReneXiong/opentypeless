@@ -35,6 +35,7 @@ const mockAppStore = {
     stt_provider: 'deepgram' as string,
     stt_api_key: '',
     stt_language: 'en',
+    stt_api_keys: {} as Record<string, string>,
   },
   updateConfig: vi.fn(),
   sttTestStatus: 'idle' as 'idle' | 'testing' | 'success' | 'error',
@@ -73,6 +74,7 @@ describe('SttPane', () => {
       stt_provider: 'deepgram',
       stt_api_key: '',
       stt_language: 'en',
+      stt_api_keys: {},
     }
     mockAppStore.sttTestStatus = 'idle'
     mockAppStore.sttLatencyMs = null
@@ -103,7 +105,11 @@ describe('SttPane', () => {
 
       fireEvent.change(providerSelect, { target: { value: 'assemblyai' } })
 
-      expect(mockAppStore.updateConfig).toHaveBeenCalledWith({ stt_provider: 'assemblyai' })
+      expect(mockAppStore.updateConfig).toHaveBeenCalledWith({
+        stt_provider: 'assemblyai',
+        stt_api_key: '',
+        stt_api_keys: { deepgram: '' },
+      })
       expect(mockAppStore.setSttTestStatus).toHaveBeenCalledWith('idle')
       expect(mockAppStore.setSttLatencyMs).toHaveBeenCalledWith(null)
     })
@@ -162,7 +168,10 @@ describe('SttPane', () => {
 
       fireEvent.change(input, { target: { value: 'sk-new-key' } })
 
-      expect(mockAppStore.updateConfig).toHaveBeenCalledWith({ stt_api_key: 'sk-new-key' })
+      expect(mockAppStore.updateConfig).toHaveBeenCalledWith({
+        stt_api_key: 'sk-new-key',
+        stt_api_keys: { deepgram: 'sk-new-key' },
+      })
       expect(mockAppStore.setSttTestStatus).toHaveBeenCalledWith('idle')
       expect(mockAppStore.setSttLatencyMs).toHaveBeenCalledWith(null)
     })

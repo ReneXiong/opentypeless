@@ -71,7 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           },
         })
         // Push saved session token to Rust for cloud providers
-        const savedToken = localStorage.getItem('session_token')
+        const savedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('session_token') : null
         if (savedToken) {
           await invoke('set_session_token', { token: savedToken }).catch((e) => {
             console.error('Failed to sync session token to backend:', e)
@@ -95,7 +95,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           onSuccess: async (ctx) => {
             const token = ctx.response.headers.get('set-auth-token')
             if (token) {
-              localStorage.setItem('session_token', token)
+              if (typeof localStorage !== 'undefined') localStorage.setItem('session_token', token)
               await invoke('set_session_token', { token }).catch((e: unknown) => {
                 console.error('Failed to sync session token to backend:', e)
               })
@@ -138,7 +138,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           onSuccess: async (ctx) => {
             const token = ctx.response.headers.get('set-auth-token')
             if (token) {
-              localStorage.setItem('session_token', token)
+              if (typeof localStorage !== 'undefined') localStorage.setItem('session_token', token)
               await invoke('set_session_token', { token }).catch((e: unknown) => {
                 console.error('Failed to sync session token to backend:', e)
               })
@@ -178,7 +178,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await authClient.signOut()
     } finally {
       // Clear session token in localStorage and Rust
-      localStorage.removeItem('session_token')
+      if (typeof localStorage !== 'undefined') localStorage.removeItem('session_token')
       await invoke('set_session_token', { token: '' }).catch((e: unknown) => {
         console.error('Failed to clear session token in backend:', e)
       })
@@ -239,7 +239,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   handleDeepLinkToken: async (token: string) => {
     try {
       set({ loading: true, error: null })
-      localStorage.setItem('session_token', token)
+      if (typeof localStorage !== 'undefined') localStorage.setItem('session_token', token)
       await invoke('set_session_token', { token }).catch((e: unknown) => {
         console.error('Failed to sync session token to backend:', e)
       })

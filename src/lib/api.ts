@@ -3,7 +3,7 @@ import { API_BASE_URL } from './constants'
 const DEFAULT_TIMEOUT_MS = 30_000
 
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('session_token')
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('session_token') : null
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 

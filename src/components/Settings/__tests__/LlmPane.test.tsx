@@ -48,6 +48,7 @@ const mockAppStore = {
     translate_enabled: false,
     selected_text_enabled: false,
     target_lang: 'en',
+    llm_api_keys: {} as Record<string, string>,
   },
   updateConfig: vi.fn(),
   llmTestStatus: 'idle' as 'idle' | 'testing' | 'success' | 'error',
@@ -93,6 +94,7 @@ describe('LlmPane', () => {
       translate_enabled: false,
       selected_text_enabled: false,
       target_lang: 'en',
+      llm_api_keys: {},
     }
     mockAppStore.llmTestStatus = 'idle'
     mockAppStore.llmLatencyMs = null
@@ -169,7 +171,10 @@ describe('LlmPane', () => {
 
       fireEvent.change(input, { target: { value: 'sk-new-key' } })
 
-      expect(mockAppStore.updateConfig).toHaveBeenCalledWith({ llm_api_key: 'sk-new-key' })
+      expect(mockAppStore.updateConfig).toHaveBeenCalledWith({
+        llm_api_key: 'sk-new-key',
+        llm_api_keys: { openai: 'sk-new-key' },
+      })
       expect(mockAppStore.setLlmTestStatus).toHaveBeenCalledWith('idle')
       expect(mockAppStore.setLlmLatencyMs).toHaveBeenCalledWith(null)
     })
