@@ -189,7 +189,12 @@
     "accessibilityRequired": "Required for keyboard output",
     "grantPermission": "Grant Permission",
     "saving": "Saving...",
-    "retry": "Retry"
+    "retry": "Retry",
+    "processingMode": "Processing Mode",
+    "traditional": "Traditional (STT + LLM)",
+    "multimodal": "Multimodal (Audio → LLM)",
+    "traditionalDescription": "Use a dedicated STT provider for transcription, then polish with an LLM.",
+    "multimodalDescription": "Send audio directly to a multimodal LLM (e.g. GPT-4o, Gemini) for transcription + polishing in one step."
   },
   "dictionary": {
     "word": "Word",
@@ -286,7 +291,12 @@
     "restoreFailed": "Restore failed",
     "sttQuotaWarning": "STT quota is above 90%. Consider switching to BYOK mode.",
     "llmQuotaWarning": "LLM quota is above 90%. Consider switching to BYOK mode.",
-    "manageSubscriptionFailed": "Failed to open subscription management"
+    "manageSubscriptionFailed": "Failed to open subscription management",
+    "verifyEmailTitle": "Check your email",
+    "verifyEmailDesc": "We sent a verification link to your email. Please click the link to verify your account, then come back and sign in.",
+    "resendVerification": "Resend verification email",
+    "verificationResent": "Verification email sent!",
+    "freeCredit": "Free Credit"
   },
   "error": {
     "somethingWentWrong": "Something went wrong",

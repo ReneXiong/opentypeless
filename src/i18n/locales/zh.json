@@ -189,7 +189,12 @@
     "accessibilityRequired": "键盘输出需要此权限",
     "grantPermission": "授权",
     "saving": "保存中...",
-    "retry": "重试"
+    "retry": "重试",
+    "processingMode": "处理模式",
+    "traditional": "传统模式（语音识别 + LLM）",
+    "multimodal": "多模态（音频 → LLM）",
+    "traditionalDescription": "使用专用语音识别服务转录，然后用 LLM 润色。",
+    "multimodalDescription": "直接将音频发送到多模态 LLM（如 GPT-4o、Gemini），一步完成转录 + 润色。"
   },
   "dictionary": {
     "word": "词语",
@@ -286,7 +291,12 @@
     "restoreFailed": "恢复失败",
     "sttQuotaWarning": "语音识别配额已超过 90%，建议切换到自带密钥模式。",
     "llmQuotaWarning": "LLM 配额已超过 90%，建议切换到自带密钥模式。",
-    "manageSubscriptionFailed": "打开订阅管理失败"
+    "manageSubscriptionFailed": "打开订阅管理失败",
+    "verifyEmailTitle": "查看你的邮箱",
+    "verifyEmailDesc": "我们已向你的邮箱发送了验证链接。请点击链接验证账户，然后返回登录。",
+    "resendVerification": "重新发送验证邮件",
+    "verificationResent": "验证邮件已发送！",
+    "freeCredit": "免费额度"
   },
   "error": {
     "somethingWentWrong": "出了点问题",
