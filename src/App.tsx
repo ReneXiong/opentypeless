@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import i18n from './i18n'
 import { useTauriEvents } from './hooks/useTauriEvents'
 import { useTheme } from './hooks/useTheme'
+import { useAutoSave } from './hooks/useAutoSave'
 import { useAppStore } from './stores/appStore'
 import { useAuthStore } from './stores/authStore'
 import { useRoute } from './lib/router'
@@ -54,6 +55,7 @@ function CapsuleApp() {
 function MainApp() {
   useTauriEvents()
   useTheme()
+  useAutoSave()
 
   const onboardingCompleted = useAppStore((s) => s.onboardingCompleted)
   const setOnboardingCompleted = useAppStore((s) => s.setOnboardingCompleted)

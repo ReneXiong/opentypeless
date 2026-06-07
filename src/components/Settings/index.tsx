@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../../stores/appStore'
@@ -9,7 +9,7 @@ import { LlmPane } from './LlmPane'
 import { DictionaryPane } from './DictionaryPane'
 import { ScenesPane } from './ScenesPane'
 import { AboutPane } from './AboutPane'
-import { DirtyBar, useDirtyConfig } from './shared/DirtyBar'
+import { AutoSaveIndicator } from './shared/AutoSaveIndicator'
 
 const paneTitleKeys: Record<PaneId, string> = {
   general: 'settings.general',
@@ -22,15 +22,10 @@ const paneTitleKeys: Record<PaneId, string> = {
 
 export function Settings() {
   const [activePane, setActivePane] = useState<PaneId>('general')
-  const config = useAppStore((s) => s.config)
-  const setSavedConfig = useAppStore((s) => s.setSavedConfig)
-  const isDirty = useDirtyConfig()
+  const autoSaveStatus = useAppStore((s) => s.autoSaveStatus)
+  const autoSaveError = useAppStore((s) => s.autoSaveError)
+  const retryAutoSave = useAppStore((s) => s.retryAutoSave)
   const { t } = useTranslation()
-
-  // Snapshot config when settings opens
-  useEffect(() => {
-    setSavedConfig(config)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="w-full h-full bg-bg-primary text-text-primary flex flex-col">
@@ -68,8 +63,12 @@ export function Settings() {
         </div>
       </div>
 
-      {/* Dirty bar */}
-      <AnimatePresence>{isDirty && <DirtyBar />}</AnimatePresence>
+      {/* Auto-save indicator */}
+      <AutoSaveIndicator
+        saving={autoSaveStatus === 'saving'}
+        error={autoSaveError}
+        onRetry={retryAutoSave}
+      />
     </div>
   )
 }

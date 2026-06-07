@@ -152,10 +152,17 @@ interface AppState {
   // Reset recording state
   resetRecording: () => void
 
-  // Config snapshot for dirty detection
+  // Config snapshot — tracks last persisted config for change detection and potential undo
   savedConfig: AppConfig | null
   setSavedConfig: (config: AppConfig) => void
   resetConfig: () => void
+
+  // Auto-save status (app-level, persists across route changes)
+  autoSaveStatus: 'idle' | 'saving' | 'error'
+  autoSaveError: string | null
+  setAutoSaveStatus: (status: 'idle' | 'saving' | 'error', error?: string | null) => void
+  autoSaveRetryCount: number
+  retryAutoSave: () => void
 }
 
 const isMac =
@@ -261,4 +268,16 @@ export const useAppStore = create<AppState>((set) => ({
   savedConfig: null,
   setSavedConfig: (savedConfig) => set({ savedConfig }),
   resetConfig: () => set((s) => (s.savedConfig ? { config: { ...s.savedConfig } } : {})),
+
+  autoSaveStatus: 'idle',
+  autoSaveError: null,
+  setAutoSaveStatus: (autoSaveStatus, autoSaveError = null) =>
+    set({ autoSaveStatus, autoSaveError }),
+  autoSaveRetryCount: 0,
+  retryAutoSave: () =>
+    set((s) => ({
+      autoSaveStatus: 'idle',
+      autoSaveError: null,
+      autoSaveRetryCount: s.autoSaveRetryCount + 1,
+    })),
 }))

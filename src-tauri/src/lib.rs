@@ -61,7 +61,7 @@ async fn stop_recording(state: tauri::State<'_, pipeline::PipelineHandle>) -> Re
 }
 
 #[tauri::command]
-fn abort_recording(state: tauri::State<'_, pipeline::PipelineHandle>) -> Result<(), String> {
+async fn abort_recording(state: tauri::State<'_, pipeline::PipelineHandle>) -> Result<(), String> {
     state.abort();
     Ok(())
 }

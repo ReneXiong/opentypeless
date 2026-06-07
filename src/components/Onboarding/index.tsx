@@ -18,6 +18,7 @@ export function Onboarding() {
   const step = useAppStore((s) => s.onboardingStep)
   const setStep = useAppStore((s) => s.setOnboardingStep)
   const setOnboardingCompleted = useAppStore((s) => s.setOnboardingCompleted)
+  const setSavedConfig = useAppStore((s) => s.setSavedConfig)
   const sttTestStatus = useAppStore((s) => s.sttTestStatus)
   const llmTestStatus = useAppStore((s) => s.llmTestStatus)
   const onboardingMode = useAppStore((s) => s.onboardingMode)
@@ -81,8 +82,10 @@ export function Onboarding() {
       // Cloud mode: set providers BEFORE saving, then skip STT/LLM setup
       if (step === 2 && onboardingMode === 'cloud') {
         updateConfig({ stt_provider: 'cloud', llm_provider: 'cloud' })
+        const cloudConfig = { ...config, stt_provider: 'cloud' as const, llm_provider: 'cloud' as const }
         try {
-          await saveConfig({ ...config, stt_provider: 'cloud', llm_provider: 'cloud' })
+          await saveConfig(cloudConfig)
+          setSavedConfig(cloudConfig)
         } catch {
           // Best-effort save
         }
@@ -92,6 +95,7 @@ export function Onboarding() {
 
       try {
         await saveConfig(config)
+        setSavedConfig(config)
       } catch {
         // Best-effort save — continue navigation even if save fails
       }
@@ -99,6 +103,7 @@ export function Onboarding() {
       setStep(step + 1)
     } else {
       await saveConfig(config)
+      setSavedConfig(config)
       await saveOnboardingCompleted()
       setOnboardingCompleted(true)
     }
@@ -108,6 +113,7 @@ export function Onboarding() {
     if (step > 0) {
       try {
         await saveConfig(config)
+        setSavedConfig(config)
       } catch {
         // Best-effort save
       }
@@ -134,6 +140,7 @@ export function Onboarding() {
       setOnboardingMode('byok')
       try {
         await saveConfig(config)
+        setSavedConfig(config)
       } catch {
         // Best-effort save
       }
@@ -142,6 +149,7 @@ export function Onboarding() {
     }
     // Original behavior for other steps — skip entire onboarding
     await saveConfig(config)
+    setSavedConfig(config)
     await saveOnboardingCompleted()
     setOnboardingCompleted(true)
   }

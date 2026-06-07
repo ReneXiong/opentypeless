@@ -7,12 +7,12 @@
  * 3. appStore.llmModels — 状态提升：初始值、读写、reset
  * 4. LlmPane provider 切换 — 清空 models 缓存
  * 5. LlmPane useEffect skip — 已有缓存时不再触发 debounce fetch
- * 6. DirtyBar — 配置变更后出现，Reset 后消失
+ * 6. Auto-save — 配置变更后自动保存（替代手动 DirtyBar）
  * 7. appStore getInitialState — llmModels 在 reset 后为空数组
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import React from 'react'
 import { useAppStore } from '../../../stores/appStore'
 
@@ -368,54 +368,29 @@ describe('LlmPane models 缓存：已有缓存时跳过 fetch', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. DirtyBar — 配置变更后出现，Reset 后消失
+// 6. Auto-save — Settings 页面不显示手动保存 UI
 // ─────────────────────────────────────────────────────────────────────────────
-describe('DirtyBar 行为', () => {
+describe('Auto-save 行为', () => {
   beforeEach(() => {
     resetStore()
     seedSavedConfig()
   })
 
-  it('初始状态下 DirtyBar 不显示', () => {
+  it('初始状态下不显示 Save/Reset 按钮', () => {
     renderSettings()
+    expect(screen.queryByText('Save')).toBeNull()
+    expect(screen.queryByText('Reset')).toBeNull()
     expect(screen.queryByText('Unsaved changes')).toBeNull()
   })
 
-  it('修改 config 后 DirtyBar 出现', async () => {
+  it('修改 config 后不显示手动保存 UI', () => {
     renderSettings()
     act(() => {
       useAppStore.getState().updateConfig({ theme: 'dark' })
     })
-    await waitFor(() => {
-      expect(screen.getByText('Unsaved changes')).toBeDefined()
-    })
-  })
-
-  it('点击 Reset 后 DirtyBar 消失', async () => {
-    renderSettings()
-    act(() => {
-      useAppStore.getState().updateConfig({ theme: 'dark' })
-    })
-    await waitFor(() => {
-      expect(screen.getByText('Unsaved changes')).toBeDefined()
-    })
-
-    fireEvent.click(screen.getByText('Reset'))
-
-    await waitFor(() => {
-      expect(screen.queryByText('Unsaved changes')).toBeNull()
-    })
-  })
-
-  it('DirtyBar 显示 Save 和 Reset 两个按钮', async () => {
-    renderSettings()
-    act(() => {
-      useAppStore.getState().updateConfig({ theme: 'dark' })
-    })
-    await waitFor(() => {
-      expect(screen.getByText('Save')).toBeDefined()
-      expect(screen.getByText('Reset')).toBeDefined()
-    })
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    expect(screen.queryByText('Save')).toBeNull()
+    expect(screen.queryByText('Reset')).toBeNull()
   })
 })
 
