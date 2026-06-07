@@ -5,9 +5,11 @@ import { useAppStore } from '../../stores/appStore'
 
 export function CapsuleProcessing() {
   const partialTranscript = useAppStore((s) => s.partialTranscript)
+  const pipelineState = useAppStore((s) => s.pipelineState)
   const reduced = useReducedMotion()
 
-  const displayText = partialTranscript || 'Transcribing...'
+  const defaultText = pipelineState === 'processing' ? 'Processing...' : 'Transcribing...'
+  const displayText = partialTranscript || defaultText
 
   const handleCancel = async (e: React.MouseEvent) => {
     e.stopPropagation()

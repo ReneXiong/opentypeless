@@ -34,6 +34,8 @@ pub struct AppConfig {
     pub stt_api_keys: HashMap<String, String>,
     /// Per-provider API keys for LLM providers (keyed by provider name).
     pub llm_api_keys: HashMap<String, String>,
+    /// Processing mode: "traditional" (STT → LLM polish) or "multimodal" (audio → multimodal LLM).
+    pub processing_mode: String,
 }
 
 impl Default for AppConfig {
@@ -65,6 +67,7 @@ impl Default for AppConfig {
             capsule_auto_hide: false,
             stt_api_keys: HashMap::new(),
             llm_api_keys: HashMap::new(),
+            processing_mode: "traditional".to_string(),
         }
     }
 }

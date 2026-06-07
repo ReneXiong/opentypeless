@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type PipelineState = 'idle' | 'recording' | 'transcribing' | 'polishing' | 'outputting'
+export type PipelineState = 'idle' | 'recording' | 'transcribing' | 'polishing' | 'processing' | 'outputting'
 
 export type SttProvider =
   | 'deepgram'
@@ -70,6 +70,8 @@ export interface AppConfig {
   stt_api_keys: Record<string, string>
   /** Per-provider API keys for LLM providers (keyed by provider name). */
   llm_api_keys: Record<string, string>
+  /** Processing mode: "traditional" (STT → LLM polish) or "multimodal" (audio → multimodal LLM). */
+  processing_mode: 'traditional' | 'multimodal'
 }
 
 export type TestStatus = 'idle' | 'testing' | 'success' | 'error'
@@ -192,6 +194,7 @@ const defaultConfig: AppConfig = {
   capsule_auto_hide: false,
   stt_api_keys: {},
   llm_api_keys: {},
+  processing_mode: 'traditional',
 }
 
 export const useAppStore = create<AppState>((set) => ({

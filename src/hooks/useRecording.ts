@@ -15,7 +15,8 @@ export function useRecording() {
   }, [])
 
   const isRecording = pipelineState === 'recording'
-  const isProcessing = pipelineState === 'transcribing' || pipelineState === 'polishing'
+  const isProcessing =
+    pipelineState === 'transcribing' || pipelineState === 'polishing' || pipelineState === 'processing'
   const isIdle = pipelineState === 'idle'
 
   return {

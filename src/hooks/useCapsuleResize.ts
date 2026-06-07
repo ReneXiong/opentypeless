@@ -22,6 +22,7 @@ function getSizeForState(
       return { width: 200, height: 36 }
     case 'transcribing':
     case 'polishing':
+    case 'processing':
       return { width: 220, height: 36 }
     case 'outputting':
       return { width: 120, height: 36 }

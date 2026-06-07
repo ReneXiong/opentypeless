@@ -118,7 +118,9 @@ export function Capsule() {
           >
             {capsuleState === 'idle' && <CapsuleIdle />}
             {capsuleState === 'recording' && <CapsuleRecording />}
-            {capsuleState === 'transcribing' && <CapsuleProcessing />}
+            {(capsuleState === 'transcribing' || capsuleState === 'processing') && (
+              <CapsuleProcessing />
+            )}
             {capsuleState === 'polishing' && <CapsulePolishing />}
             {capsuleState === 'outputting' && <CapsuleComplete />}
             {capsuleState === 'error' && <CapsuleError />}

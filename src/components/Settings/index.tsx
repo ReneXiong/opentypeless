@@ -28,7 +28,7 @@ export function Settings() {
   const { t } = useTranslation()
 
   return (
-    <div className="w-full h-full bg-bg-primary text-text-primary flex flex-col">
+    <div className="w-full flex-1 bg-bg-primary text-text-primary flex flex-col min-h-0">
       <div className="flex-1 flex min-h-0">
         {/* Sidebar */}
         <SettingsSidebar activePane={activePane} onSelect={setActivePane} />

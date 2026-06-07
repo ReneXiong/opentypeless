@@ -73,6 +73,7 @@ pub enum PipelineState {
     Recording,
     Transcribing,
     Polishing,
+    Processing,
     Outputting,
 }
 
@@ -84,6 +85,7 @@ impl PipelineState {
             Self::Transcribing => 2,
             Self::Polishing => 3,
             Self::Outputting => 4,
+            Self::Processing => 5,
         }
     }
 
@@ -93,6 +95,7 @@ impl PipelineState {
             2 => Self::Transcribing,
             3 => Self::Polishing,
             4 => Self::Outputting,
+            5 => Self::Processing,
             _ => Self::Idle,
         }
     }
@@ -104,6 +107,9 @@ pub struct PipelineHandle {
     audio_handle: Arc<Mutex<Option<AudioCaptureHandle>>>,
     audio_volume: Arc<Mutex<f32>>,
     accumulated_text: Arc<Mutex<String>>,
+    /// Raw PCM audio buffer for multimodal mode.
+    /// Collected during recording, sent as WAV to multimodal LLM on stop.
+    audio_buffer: Arc<Mutex<Vec<u8>>>,
     stt_done: Arc<Notify>,
     abort_flag: Arc<AtomicBool>,
     preloaded_config: Arc<Mutex<Option<storage::AppConfig>>>,
@@ -127,6 +133,7 @@ impl PipelineHandle {
             audio_handle: Arc::new(Mutex::new(None)),
             audio_volume: Arc::new(Mutex::new(0.0)),
             accumulated_text: Arc::new(Mutex::new(String::new())),
+            audio_buffer: Arc::new(Mutex::new(Vec::new())),
             stt_done: Arc::new(Notify::new()),
             abort_flag: Arc::new(AtomicBool::new(false)),
             preloaded_config: Arc::new(Mutex::new(None)),
@@ -149,6 +156,7 @@ impl PipelineHandle {
                 PipelineState::Recording => "OpenTypeless - Recording...",
                 PipelineState::Transcribing => "OpenTypeless - Transcribing...",
                 PipelineState::Polishing => "OpenTypeless - Polishing...",
+                PipelineState::Processing => "OpenTypeless - Processing...",
                 PipelineState::Outputting => "OpenTypeless - Outputting...",
                 PipelineState::Idle => "OpenTypeless",
             };
@@ -343,6 +351,11 @@ impl PipelineHandle {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+        // Clear audio buffer for multimodal mode
+        self.audio_buffer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         // P0-2: Load config BEFORE starting audio capture — fail fast on missing API key
         let config_data = self.load_config().await;
@@ -484,6 +497,7 @@ impl PipelineHandle {
         let app_handle = self.app_handle.clone();
         let accumulated = self.accumulated_text.clone();
         let stt_done = self.stt_done.clone();
+        let audio_buffer = self.audio_buffer.clone();
 
         tokio::spawn(async move {
             // Forward audio to STT and receive transcripts
@@ -503,6 +517,8 @@ impl PipelineHandle {
                                         audio_chunks_sent, audio_bytes_sent
                                     );
                                 }
+                                // Collect audio for multimodal mode
+                                audio_buffer.lock().unwrap_or_else(|e| e.into_inner()).extend_from_slice(&data);
                                 if let Err(e) = provider.send_audio(&data).await {
                                     tracing::error!("STT send_audio error: {}", e);
                                     break;
@@ -710,7 +726,21 @@ impl PipelineHandle {
         // isn't blocked by the long stt_done wait that follows.
         drop(guard);
 
-        // ── Phase 1: Wait for STT ──────────────────────────────────────
+        // ── Branch: Multimodal vs Traditional ──────────────────────────
+        if config.processing_mode == "multimodal" {
+            return self
+                .stop_multimodal(
+                    &config,
+                    &app_ctx,
+                    dictionary_words,
+                    selected_text,
+                    session_token,
+                    stop_start,
+                )
+                .await;
+        }
+
+        // ── Traditional: Phase 1: Wait for STT ────────────────────────
         let raw_text = match self.wait_for_stt().await? {
             Some(text) => text,
             None => return Ok(()), // aborted or no speech detected
@@ -727,7 +757,7 @@ impl PipelineHandle {
             return Ok(());
         }
 
-        // ── Phase 2: LLM polish + output ───────────────────────────────
+        // ── Traditional: Phase 2: LLM polish + output ─────────────────
         let (final_text, llm_elapsed) = self
             .polish_text(
                 &raw_text,
@@ -772,6 +802,172 @@ impl PipelineHandle {
         // Save to history
         self.save_history(&raw_text, &final_text, &app_ctx, duration_ms)
             .await;
+
+        self.set_state(PipelineState::Idle);
+        Ok(())
+    }
+
+    /// Multimodal processing path: send audio directly to multimodal LLM.
+    async fn stop_multimodal(
+        &self,
+        config: &storage::AppConfig,
+        app_ctx: &app_detector::AppContext,
+        dictionary_words: Vec<String>,
+        selected_text: Option<String>,
+        session_token: String,
+        stop_start: std::time::Instant,
+    ) -> Result<()> {
+        self.set_state(PipelineState::Processing);
+        tracing::info!("Multimodal mode: processing audio with LLM");
+
+        // Take the buffered audio
+        let pcm_audio = self
+            .audio_buffer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .split_off(0);
+
+        if pcm_audio.is_empty() {
+            let _ = self
+                .app_handle
+                .emit("pipeline:error", "No audio captured. Please try again.");
+            self.set_state(PipelineState::Idle);
+            return Ok(());
+        }
+
+        let audio_duration_secs =
+            pcm_audio.len() as f64 / (16000.0 * 2.0); // 16kHz, 16-bit mono
+        tracing::info!(
+            "Multimodal: {:.1}s of audio buffered",
+            audio_duration_secs
+        );
+
+        // Build WAV from raw PCM
+        let wav_data = crate::multimodal::build_wav(&pcm_audio, 16000);
+
+        // Build the multimodal system prompt
+        let system_prompt = crate::multimodal::prompt::build_multimodal_prompt(
+            app_ctx.app_type,
+            &dictionary_words,
+            config.translate_enabled,
+            &config.target_lang,
+            selected_text.is_some(),
+        );
+
+        // Resolve LLM API key
+        let effective_llm_key = config
+            .llm_api_keys
+            .get(&config.llm_provider)
+            .filter(|k| !k.is_empty())
+            .cloned()
+            .unwrap_or_else(|| config.llm_api_key.clone());
+        let llm_api_key = if config.llm_provider == "cloud" {
+            session_token
+        } else {
+            effective_llm_key
+        };
+
+        if llm_api_key.is_empty() && config.llm_provider != "cloud" {
+            let _ = self
+                .app_handle
+                .emit("pipeline:error", "LLM API key is empty. Please configure it in Settings.");
+            self.set_state(PipelineState::Idle);
+            return Ok(());
+        }
+
+        let llm_config = LlmConfig {
+            api_key: llm_api_key,
+            model: config.llm_model.clone(),
+            base_url: config.llm_base_url.clone(),
+            max_tokens: 4096,
+            temperature: 0.3,
+        };
+
+        let provider = crate::multimodal::create_provider(
+            &config.llm_provider,
+            Some(self.shared_client.clone()),
+        );
+
+        let app_handle = self.app_handle.clone();
+        let on_chunk: llm::ChunkCallback = Box::new(move |chunk: &str| {
+            let _ = app_handle.emit("llm:chunk", chunk);
+        });
+
+        let req = crate::multimodal::MultimodalRequest {
+            audio_wav: wav_data,
+            system_prompt,
+            app_type: app_ctx.app_type,
+            dictionary: dictionary_words,
+            translate_enabled: config.translate_enabled,
+            target_lang: config.target_lang.clone(),
+            selected_text,
+        };
+
+        let llm_start = std::time::Instant::now();
+        let result = provider
+            .process(&llm_config, &req, Some(&on_chunk))
+            .await;
+        let llm_elapsed = llm_start.elapsed();
+
+        if self.abort_flag.load(Ordering::SeqCst) {
+            tracing::info!("Multimodal: aborted during LLM processing");
+            self.set_state(PipelineState::Idle);
+            return Ok(());
+        }
+
+        match result {
+            Ok(response) => {
+                tracing::info!(
+                    "Multimodal: received {} chars in {}ms",
+                    response.text.len(),
+                    llm_elapsed.as_millis()
+                );
+
+                let total_elapsed = stop_start.elapsed();
+                let duration_ms = self
+                    .recording_start
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take()
+                    .map(|start| start.elapsed().as_millis() as i64);
+
+                tracing::info!(
+                    "[Pipeline Timing] Multimodal total: {}ms (LLM: {}ms)",
+                    total_elapsed.as_millis(),
+                    llm_elapsed.as_millis(),
+                );
+
+                let _ = self.app_handle.emit(
+                    "pipeline:timing",
+                    serde_json::json!({
+                        "stt_ms": 0u64,
+                        "llm_ms": llm_elapsed.as_millis() as u64,
+                        "total_ms": total_elapsed.as_millis() as u64,
+                        "recording_ms": duration_ms,
+                    }),
+                );
+
+                // Save to history (raw_text is empty for multimodal, final_text is the LLM output)
+                self.save_history("", &response.text, app_ctx, duration_ms)
+                    .await;
+
+                if let Err(e) = self
+                    .output_text(&response.text, &app_ctx.app_name, config)
+                    .await
+                {
+                    tracing::error!("Output failed: {}", e);
+                    let _ = self
+                        .app_handle
+                        .emit("pipeline:error", format!("Output failed: {e}"));
+                }
+            }
+            Err(e) => {
+                tracing::error!("Multimodal processing failed: {}", e);
+                let _ = self
+                    .app_handle
+                    .emit("pipeline:error", format!("Multimodal error: {e}"));
+            }
+        }
 
         self.set_state(PipelineState::Idle);
         Ok(())

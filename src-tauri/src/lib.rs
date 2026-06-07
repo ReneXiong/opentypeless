@@ -4,6 +4,7 @@ pub mod commands;
 pub mod error;
 pub mod hotkey;
 pub mod llm;
+pub mod multimodal;
 pub mod output;
 pub mod pipeline;
 pub mod storage;

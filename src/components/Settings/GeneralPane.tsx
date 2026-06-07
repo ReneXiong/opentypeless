@@ -235,6 +235,30 @@ export function GeneralPane() {
         />
       </Section>
 
+      <Section title={t('settings.processingMode', 'Processing Mode')}>
+        <SegmentedControl
+          options={[
+            { value: 'traditional', label: t('settings.traditional', 'Traditional (STT + LLM)') },
+            { value: 'multimodal', label: t('settings.multimodal', 'Multimodal (Audio → LLM)') },
+          ]}
+          value={config.processing_mode}
+          onChange={(v) =>
+            updateConfig({ processing_mode: v as 'traditional' | 'multimodal' })
+          }
+        />
+        <p className="text-[11px] text-text-secondary mt-1.5">
+          {config.processing_mode === 'multimodal'
+            ? t(
+                'settings.multimodalDescription',
+                'Send audio directly to a multimodal LLM (e.g. GPT-4o, Gemini) for transcription + polishing in one step.'
+              )
+            : t(
+                'settings.traditionalDescription',
+                'Use a dedicated STT provider for transcription, then polish with an LLM.'
+              )}
+        </p>
+      </Section>
+
       {isMac && config.output_mode === 'keyboard' && a11yTrusted !== null && (
         <Section title={t('settings.accessibilityPermission')}>
           <div className="flex items-center justify-between">
