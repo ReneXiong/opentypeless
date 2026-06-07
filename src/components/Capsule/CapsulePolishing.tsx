@@ -1,8 +1,10 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { abortRecording } from '../../lib/tauri'
 
 export function CapsulePolishing() {
+  const { t } = useTranslation()
   const reduced = useReducedMotion()
 
   const handleCancel = async (e: React.MouseEvent) => {
@@ -32,8 +34,10 @@ export function CapsulePolishing() {
           />
         ))}
       </div>
-      <p className="text-[11px] text-white leading-snug truncate flex-1 min-w-0">Thinking...</p>
+      <p className="text-[11px] text-white leading-snug truncate flex-1 min-w-0">{t('capsule.thinking')}</p>
       <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
         onClick={handleCancel}
         aria-label="Cancel polishing"
         className="flex-shrink-0 p-1 rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors bg-transparent border-none cursor-pointer"

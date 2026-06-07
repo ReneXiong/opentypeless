@@ -141,6 +141,8 @@ function HotkeyRecorder() {
       window.removeEventListener('keydown', handleKeyDown, true)
       window.removeEventListener('keyup', handleKeyUp, true)
       if (autoConfirmTimer.current) clearTimeout(autoConfirmTimer.current)
+      // Resume global hotkey if component unmounts while recording
+      resumeHotkey().catch(() => {})
     }
   }, [recording, handleKeyDown, handleKeyUp])
 

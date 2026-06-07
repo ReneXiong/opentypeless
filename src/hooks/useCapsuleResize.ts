@@ -108,6 +108,7 @@ export function useCapsuleResize() {
         // Since content is always padded 12px each side, the capsule at x=12
         // is identical to a centered capsule — so the mic icon never moves.
         const prev = prevWindowSize.current
+        let resizeOk = false
         if (prev) {
           const pos = await win.outerPosition().catch(() => null)
           if (pos) {
@@ -117,16 +118,28 @@ export function useCapsuleResize() {
             const oldCenterY = pos.y / scale + prev.height / 2
             const newX = Math.round(oldLeftX)
             const newY = Math.round(oldCenterY - windowHeight / 2)
-            await win.setPosition(new LogicalPosition(newX, newY)).catch(() => {})
-            await win.setSize(new LogicalSize(windowWidth, windowHeight)).catch(() => {})
+            try {
+              await win.setPosition(new LogicalPosition(newX, newY))
+              await win.setSize(new LogicalSize(windowWidth, windowHeight))
+              resizeOk = true
+            } catch { /* window operation failed */ }
           } else {
-            await win.setSize(new LogicalSize(windowWidth, windowHeight)).catch(() => {})
+            try {
+              await win.setSize(new LogicalSize(windowWidth, windowHeight))
+              resizeOk = true
+            } catch { /* window operation failed */ }
           }
         } else {
-          await win.setSize(new LogicalSize(windowWidth, windowHeight)).catch(() => {})
+          try {
+            await win.setSize(new LogicalSize(windowWidth, windowHeight))
+            resizeOk = true
+          } catch { /* window operation failed */ }
         }
 
-        prevWindowSize.current = { width: windowWidth, height: windowHeight }
+        // Only update baseline after successful resize to avoid stale reference
+        if (resizeOk) {
+          prevWindowSize.current = { width: windowWidth, height: windowHeight }
+        }
 
         // Signal that the window has finished resizing for context menu
         if (contextMenuOpen) {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, FileText, Sparkles, Type, Keyboard, Check } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../../stores/appStore'
 import { CapsuleLogo } from '../Capsule/CapsuleLogo'
 
@@ -15,26 +16,27 @@ const PHASE_DURATION: Record<DemoPhase, number> = {
   complete: 2000,
 }
 
-const STAGES = [
-  { icon: Mic, label: 'Record', key: 'recording' },
-  { icon: FileText, label: 'STT', key: 'transcribing' },
-  { icon: Sparkles, label: 'LLM', key: 'polishing' },
-  { icon: Type, label: 'Output', key: 'complete' },
-] as const
-
 const DEMO_RAW = 'hello um can you help me with this'
 const DEMO_POLISHED = 'Hello, can you help me with this?'
 
-const PHASE_DESC: Record<DemoPhase, string> = {
-  idle: 'Press the hotkey to start',
-  recording: 'Speaking...',
-  transcribing: 'Converting speech to text',
-  polishing: 'AI refines your words',
-  complete: 'Done — typed into your app',
-}
-
 export function QuickTestStep() {
+  const { t } = useTranslation('onboarding')
   const config = useAppStore((s) => s.config)
+
+  const STAGES = [
+    { icon: Mic, label: t('record'), key: 'recording' },
+    { icon: FileText, label: t('stt'), key: 'transcribing' },
+    { icon: Sparkles, label: t('llm'), key: 'polishing' },
+    { icon: Type, label: t('output'), key: 'complete' },
+  ] as const
+
+  const PHASE_DESC: Record<DemoPhase, string> = {
+    idle: t('pressHotkeyToStart'),
+    recording: t('speaking'),
+    transcribing: t('convertingSpeechToText'),
+    polishing: t('aiRefinesWords'),
+    complete: t('doneTypedIntoApp'),
+  }
   const [phase, setPhase] = useState<DemoPhase>('idle')
   const [rawChars, setRawChars] = useState(0)
   const [polishedChars, setPolishedChars] = useState(0)
@@ -119,11 +121,11 @@ export function QuickTestStep() {
         >
           <Keyboard size={12} className="text-text-tertiary" />
           <span className="text-[11px] text-text-secondary">
-            {config.hotkey_mode === 'hold' ? 'Hold' : 'Press'}{' '}
+            {config.hotkey_mode === 'hold' ? t('hold') : t('press')}{' '}
             <kbd className="px-1 py-0.5 bg-bg-tertiary rounded-[4px] text-[11px] font-mono text-text-primary font-medium border border-border">
               {config.hotkey}
             </kbd>{' '}
-            {config.hotkey_mode === 'hold' ? 'to talk' : 'to start/stop'}
+            {config.hotkey_mode === 'hold' ? t('toTalk') : t('toStartStop')}
           </span>
         </motion.div>
       </div>
@@ -258,7 +260,7 @@ export function QuickTestStep() {
 
             {phase === 'transcribing' && (
               <div>
-                <StageLabel>Transcribing</StageLabel>
+                <StageLabel>{t('transcribing')}</StageLabel>
                 <p className="text-text-secondary">
                   {DEMO_RAW.slice(0, rawChars)}
                   <BlinkingCursor color="bg-text-tertiary" />
@@ -269,11 +271,11 @@ export function QuickTestStep() {
             {phase === 'polishing' && (
               <div className="space-y-2">
                 <div>
-                  <StageLabel>Raw</StageLabel>
+                  <StageLabel>{t('raw')}</StageLabel>
                   <p className="text-text-tertiary line-through">{DEMO_RAW}</p>
                 </div>
                 <div>
-                  <StageLabel>Polished</StageLabel>
+                  <StageLabel>{t('polished')}</StageLabel>
                   <p className="text-[13px] text-text-primary">
                     {DEMO_POLISHED.slice(0, polishedChars)}
                     <BlinkingCursor color="bg-accent" />
@@ -285,11 +287,11 @@ export function QuickTestStep() {
             {phase === 'complete' && (
               <div className="space-y-2">
                 <div>
-                  <StageLabel>Raw</StageLabel>
+                  <StageLabel>{t('raw')}</StageLabel>
                   <p className="text-text-tertiary line-through">{DEMO_RAW}</p>
                 </div>
                 <div>
-                  <StageLabel>Result</StageLabel>
+                  <StageLabel>{t('result')}</StageLabel>
                   <p className="text-[13px] text-text-primary">{DEMO_POLISHED}</p>
                 </div>
               </div>

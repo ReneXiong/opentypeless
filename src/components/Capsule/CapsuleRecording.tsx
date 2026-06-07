@@ -28,6 +28,8 @@ export function CapsuleRecording() {
       <div className="flex-1" />
       <DurationTimer />
       <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
         onClick={handleCancel}
         aria-label="Cancel recording"
         className="flex-shrink-0 p-1 rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors bg-transparent border-none cursor-pointer"

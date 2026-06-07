@@ -42,11 +42,15 @@ export function LlmPane() {
     [setModels],
   )
 
-  // Auto-fetch when API key or base URL changes (debounced); skips if models already cached
+  // Auto-fetch when API key or base URL changes (debounced)
+  const lastFetchedRef = useRef<string>('')
   useEffect(() => {
     if (isCloud) return
     if (!config.llm_api_key || !config.llm_base_url) return
-    if (models.length > 0) return
+    const key = `${config.llm_api_key}|${config.llm_base_url}`
+    if (key === lastFetchedRef.current) return
+    lastFetchedRef.current = key
+    setModels([])
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       doFetchModels(config.llm_api_key, config.llm_base_url)
@@ -57,7 +61,7 @@ export function LlmPane() {
         debounceRef.current = null
       }
     }
-  }, [config.llm_api_key, config.llm_base_url, doFetchModels, isCloud, models.length])
+  }, [config.llm_api_key, config.llm_base_url, doFetchModels, isCloud])
 
   const handleTest = async () => {
     setLlmTestStatus('testing')

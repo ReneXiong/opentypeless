@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Crown, Copy, Check, BookOpen } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
@@ -17,8 +17,17 @@ export function ScenesPane() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [mergeMsg, setMergeMsg] = useState<string | null>(null)
+  const [mergeMsgType, setMergeMsgType] = useState<'success' | 'error'>('success')
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   const setDictionary = useAppStore((s) => s.setDictionary)
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout)
+      timersRef.current.clear()
+    }
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -84,7 +93,11 @@ export function ScenesPane() {
     try {
       await navigator.clipboard.writeText(scene.promptTemplate)
       setCopiedId(scene.id)
-      setTimeout(() => setCopiedId(null), 2000)
+      const timer = setTimeout(() => {
+        timersRef.current.delete(timer)
+        setCopiedId(null)
+      }, 2000)
+      timersRef.current.add(timer)
     } catch {
       // Clipboard write failed silently
     }
@@ -99,10 +112,20 @@ export function ScenesPane() {
       const updated = await getDictionary()
       setDictionary(updated)
       setMergeMsg(t('scenes.addedTerms', { count: scene.dictionaryTerms.length }))
-      setTimeout(() => setMergeMsg(null), 3000)
+      setMergeMsgType('success')
+      const timer1 = setTimeout(() => {
+        timersRef.current.delete(timer1)
+        setMergeMsg(null)
+      }, 3000)
+      timersRef.current.add(timer1)
     } catch {
       setMergeMsg(t('scenes.failedToMerge'))
-      setTimeout(() => setMergeMsg(null), 3000)
+      setMergeMsgType('error')
+      const timer2 = setTimeout(() => {
+        timersRef.current.delete(timer2)
+        setMergeMsg(null)
+      }, 3000)
+      timersRef.current.add(timer2)
     }
   }
 
@@ -234,7 +257,7 @@ export function ScenesPane() {
       {/* Merge feedback */}
       {mergeMsg && (
         <p
-          className={`text-[12px] ${mergeMsg.includes('Failed') ? 'text-red-500' : 'text-green-500'}`}
+          className={`text-[12px] ${mergeMsgType === 'error' ? 'text-red-500' : 'text-green-500'}`}
         >
           {mergeMsg}
         </p>

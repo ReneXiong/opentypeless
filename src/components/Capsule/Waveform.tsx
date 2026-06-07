@@ -47,6 +47,9 @@ export function Waveform() {
           key={i}
           ref={(el) => {
             barsRef.current[i] = el
+            return () => {
+              barsRef.current[i] = null
+            }
           }}
           className="w-[2px] rounded-full bg-white/80"
           style={{

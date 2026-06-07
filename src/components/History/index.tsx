@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { Search, Copy, Trash2 } from 'lucide-react'
@@ -13,15 +13,22 @@ export function History() {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
 
   const filtered = useMemo(
     () =>
       search
         ? history.filter(
             (h) =>
-              h.polished_text.includes(search) ||
-              h.raw_text.includes(search) ||
-              h.app_name.includes(search),
+              h.polished_text.toLowerCase().includes(search.toLowerCase()) ||
+              h.raw_text.toLowerCase().includes(search.toLowerCase()) ||
+              h.app_name.toLowerCase().includes(search.toLowerCase()),
           )
         : history,
     [history, search],
@@ -32,7 +39,8 @@ export function History() {
       .writeText(text)
       .then(() => {
         setCopiedId(id)
-        setTimeout(() => setCopiedId(null), 1500)
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+        copyTimerRef.current = setTimeout(() => setCopiedId(null), 1500)
       })
       .catch(() => {
         toast.error(t('history.failedToCopy'))
@@ -50,20 +58,22 @@ export function History() {
     }
   }
 
+  // today / yesterday computed outside memo so they update when the calendar date changes
+  const today = new Date().toISOString().split('T')[0]
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+
   // Group by date
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>()
     for (const entry of filtered) {
       const date = entry.created_at.split('T')[0] || entry.created_at.split(' ')[0]
-      const today = new Date().toISOString().split('T')[0]
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
       const label =
         date === today ? t('history.today') : date === yesterday ? t('history.yesterday') : date
       if (!map.has(label)) map.set(label, [])
       map.get(label)!.push(entry)
     }
     return map
-  }, [filtered, t])
+  }, [filtered, t, today, yesterday])
 
   return (
     <div className="w-full h-full bg-bg-primary text-text-primary flex flex-col">
@@ -120,14 +130,14 @@ export function History() {
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] text-text-primary leading-relaxed">
-                          {entry.polished_text}
+                          {entry.polished_text || entry.raw_text}
                         </p>
                         <p className="text-[11px] text-text-tertiary mt-1">
                           {entry.created_at.split('T')[1]?.slice(0, 5) || ''} · {entry.app_name}
                         </p>
                       </div>
                       <motion.button
-                        onClick={() => handleCopy(entry.id, entry.polished_text)}
+                        onClick={() => handleCopy(entry.id, entry.polished_text || entry.raw_text)}
                         whileTap={{ scaleX: 1.1, scaleY: 0.9 }}
                         transition={spring.jelly}
                         className="opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 p-1.5 rounded-[6px] hover:bg-bg-tertiary transition-all duration-200 bg-transparent border-none cursor-pointer text-text-tertiary hover:text-accent flex-shrink-0"

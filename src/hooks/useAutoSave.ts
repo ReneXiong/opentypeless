@@ -31,7 +31,14 @@ export function useAutoSave() {
     savedConfigRef.current = savedConfig
   }, [savedConfig])
 
+  const isSavingRef = useRef(false)
+  const mountedRef = useRef(true)
+
   const performSave = useCallback(async () => {
+    // Guard against concurrent saves (e.g. debounce timer + visibility change)
+    if (isSavingRef.current) return
+    isSavingRef.current = true
+
     const latest = configRef.current
     const prev = savedConfigRef.current
     setAutoSaveStatus('saving')
@@ -53,6 +60,12 @@ export function useAutoSave() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to save settings'
       setAutoSaveStatus('error', msg)
+    } finally {
+      isSavingRef.current = false
+      // If config changed while save was in-flight, schedule a retry
+      if (mountedRef.current && JSON.stringify(configRef.current) !== JSON.stringify(savedConfigRef.current)) {
+        timerRef.current = setTimeout(() => performSave(), DEBOUNCE_MS)
+      }
     }
   }, [setSavedConfig, setAutoSaveStatus])
 
@@ -95,4 +108,11 @@ export function useAutoSave() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [performSave])
+
+  // Mark as unmounted to prevent retry timer from firing after teardown
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 }

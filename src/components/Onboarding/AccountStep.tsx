@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Loader2, UserCircle, CheckCircle2, Mail } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/authStore'
 import { API_BASE_URL } from '../../lib/constants'
 import { generateOAuthState, clearOAuthState } from '../../lib/deep-link'
@@ -9,6 +10,7 @@ import { generateOAuthState, clearOAuthState } from '../../lib/deep-link'
 type Tab = 'signin' | 'signup'
 
 export function AccountStep() {
+  const { t } = useTranslation('account')
   const { user, loading, error, emailVerificationPending, resendVerification, signIn, signUp } =
     useAuthStore()
   const [tab, setTab] = useState<Tab>('signin')
@@ -26,7 +28,7 @@ export function AccountStep() {
       () => {
         setOauthPending(null)
         clearOAuthState()
-        setLocalError('Sign in timed out. Please try again.')
+        setLocalError(t('oauthTimeout'))
       },
       2 * 60 * 1000,
     )
@@ -50,11 +52,11 @@ export function AccountStep() {
         await signIn(email, password)
       } else {
         if (!name.trim()) {
-          setLocalError('Name is required')
+          setLocalError(t('nameRequired'))
           return
         }
         if (password.length < 8) {
-          setLocalError('Password must be at least 8 characters')
+          setLocalError(t('passwordMinLength'))
           return
         }
         await signUp(email, password, name)
@@ -74,7 +76,7 @@ export function AccountStep() {
       await openUrl(url)
     } catch {
       setOauthPending(null)
-      setLocalError(`Failed to start ${provider} sign in`)
+      setLocalError(t('oauthTimeout'))
     }
   }
 
@@ -97,7 +99,7 @@ export function AccountStep() {
           </motion.div>
         </motion.div>
         <div className="text-center">
-          <p className="text-[13px] text-text-secondary">Signed in as</p>
+          <p className="text-[13px] text-text-secondary">{t('signedInAs')}</p>
           <p className="text-[15px] font-medium text-text-primary mt-1">{user.email}</p>
         </div>
         <div className="bg-bg-secondary rounded-[14px] p-4 w-full">
@@ -106,8 +108,8 @@ export function AccountStep() {
               <UserCircle size={18} className="text-accent" />
             </div>
             <div>
-              <p className="text-[13px] font-medium text-text-primary">Free Plan</p>
-              <p className="text-[12px] text-text-secondary">15 min voice + 100K tokens</p>
+              <p className="text-[13px] font-medium text-text-primary">{t('freePlan')}</p>
+              <p className="text-[12px] text-text-secondary">{t('freePlanDesc')}</p>
             </div>
           </div>
         </div>
@@ -123,10 +125,9 @@ export function AccountStep() {
           <Mail size={36} className="text-accent" />
         </div>
         <div>
-          <h2 className="text-[17px] font-semibold text-text-primary">Check your email</h2>
+          <h2 className="text-[17px] font-semibold text-text-primary">{t('checkYourEmail')}</h2>
           <p className="text-[13px] text-text-secondary mt-1.5">
-            We sent a verification link to your email. Click it to verify, then come back and sign
-            in.
+            {t('verificationLinkSent')}
           </p>
         </div>
         <div className="flex flex-col items-center gap-2 w-full">
@@ -141,9 +142,9 @@ export function AccountStep() {
             disabled={loading}
             className="w-full py-2.5 rounded-[10px] bg-accent text-white text-[13px] font-medium cursor-pointer border-none hover:bg-accent-hover transition-colors disabled:opacity-50"
           >
-            {loading ? 'Sending...' : 'Resend verification email'}
+            {loading ? t('sending') : t('resendVerificationEmail')}
           </button>
-          {resent && <p className="text-success text-[12px]">Verification email sent!</p>}
+          {resent && <p className="text-success text-[12px]">{t('verificationEmailSent')}</p>}
           {error && <p className="text-error text-[12px]">{error}</p>}
           <button
             onClick={() => {
@@ -153,7 +154,7 @@ export function AccountStep() {
             }}
             className="w-full py-2.5 rounded-[10px] bg-bg-secondary border border-border text-text-primary text-[13px] cursor-pointer hover:bg-bg-tertiary transition-colors"
           >
-            Back to Sign In
+            {t('backToSignIn')}
           </button>
         </div>
       </div>
@@ -212,9 +213,9 @@ export function AccountStep() {
             </div>
           </div>
           <div className="space-y-1.5">
-            <p className="text-[15px] font-medium text-text-primary">Completing sign in...</p>
+            <p className="text-[15px] font-medium text-text-primary">{t('oauthPendingTitle')}</p>
             <p className="text-text-secondary text-[12px]">
-              Finish signing in with your browser. You'll be redirected back automatically.
+              {t('oauthPendingDesc')}
             </p>
           </div>
           <div className="h-1 rounded-full overflow-hidden bg-bg-secondary mx-4">
@@ -233,7 +234,7 @@ export function AccountStep() {
             }}
             className="px-4 py-2 rounded-[10px] border border-border bg-transparent text-text-secondary text-[12px] cursor-pointer hover:bg-bg-secondary transition-colors"
           >
-            Cancel
+            {t('cancel')}
           </button>
         </div>
       </div>
@@ -263,7 +264,7 @@ export function AccountStep() {
               : 'bg-transparent text-text-secondary hover:text-text-primary'
           }`}
         >
-          Sign In
+          {t('signIn')}
         </button>
         <button
           onClick={() => {
@@ -276,17 +277,17 @@ export function AccountStep() {
               : 'bg-transparent text-text-secondary hover:text-text-primary'
           }`}
         >
-          Sign Up
+          {t('signUp')}
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         {tab === 'signup' && (
           <div>
-            <label className="block text-[13px] font-medium text-text-secondary mb-2">Name</label>
+            <label className="block text-[13px] font-medium text-text-secondary mb-2">{t('name')}</label>
             <input
               type="text"
-              placeholder="Your name"
+              placeholder={t('yourName')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2.5 bg-bg-secondary border border-border rounded-[10px] text-[13px] text-text-primary outline-none focus:border-border-focus transition-colors"
@@ -294,7 +295,7 @@ export function AccountStep() {
           </div>
         )}
         <div>
-          <label className="block text-[13px] font-medium text-text-secondary mb-2">Email</label>
+          <label className="block text-[13px] font-medium text-text-secondary mb-2">{t('email')}</label>
           <input
             type="email"
             placeholder="user@example.com"
@@ -305,7 +306,7 @@ export function AccountStep() {
           />
         </div>
         <div>
-          <label className="block text-[13px] font-medium text-text-secondary mb-2">Password</label>
+          <label className="block text-[13px] font-medium text-text-secondary mb-2">{t('password')}</label>
           <input
             type="password"
             placeholder="••••••••"
@@ -323,14 +324,14 @@ export function AccountStep() {
           className="w-full py-2.5 rounded-[10px] bg-accent text-white text-[13px] font-medium cursor-pointer border-none hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
         >
           {loading && <Loader2 size={14} className="animate-spin" />}
-          {tab === 'signin' ? 'Sign In' : 'Sign Up'}
+          {tab === 'signin' ? t('signIn') : t('signUp')}
         </button>
       </form>
 
       {/* Divider */}
       <div className="flex items-center gap-3">
         <div className="flex-1 h-px bg-border" />
-        <span className="text-text-tertiary text-[12px]">or</span>
+        <span className="text-text-tertiary text-[12px]">{t('orContinueWith')}</span>
         <div className="flex-1 h-px bg-border" />
       </div>
 
@@ -358,7 +359,7 @@ export function AccountStep() {
               fill="#EA4335"
             />
           </svg>
-          Google
+          {t('continueWithGoogle')}
         </button>
         <button
           onClick={() => handleOAuth('github')}
@@ -367,7 +368,7 @@ export function AccountStep() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
           </svg>
-          GitHub
+          {t('continueWithGithub')}
         </button>
       </div>
     </div>

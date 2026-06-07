@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   saving: boolean
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function AutoSaveIndicator({ saving, error, onRetry }: Props) {
+  const { t } = useTranslation()
   const show = saving || error !== null
 
   return (
@@ -32,7 +34,7 @@ export function AutoSaveIndicator({ saving, error, onRetry }: Props) {
               >
                 <Loader2 size={12} />
               </motion.div>
-              Saving...
+              {t('settings.saving', 'Saving...')}
             </span>
           )}
           {error && (
@@ -46,7 +48,7 @@ export function AutoSaveIndicator({ saving, error, onRetry }: Props) {
                 className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-text-secondary hover:text-text-primary bg-transparent border border-border cursor-pointer rounded-[8px] hover:bg-bg-tertiary transition-colors"
               >
                 <RefreshCw size={10} />
-                Retry
+                {t('settings.retry', 'Retry')}
               </button>
             </>
           )}

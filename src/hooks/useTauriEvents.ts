@@ -63,15 +63,13 @@ export function useTauriEvents() {
     addListener<string | { code: string; details?: string; retry_count: number }>(
       'pipeline:error',
       (payload) => {
+        const code = typeof payload === 'string' ? payload : payload.code
         const message =
           typeof payload === 'string'
             ? payload
             : t(`errors.${payload.code}`, { details: payload.details ?? '' })
         setPipelineError(message)
-        if (
-          message === 'ACCESSIBILITY_REQUIRED' ||
-          (typeof payload === 'string' && payload === 'ACCESSIBILITY_REQUIRED')
-        ) {
+        if (code === 'ACCESSIBILITY_REQUIRED') {
           setAccessibilityTrusted(false)
         }
       },

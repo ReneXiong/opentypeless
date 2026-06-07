@@ -6,6 +6,8 @@ export function DurationTimer() {
   const pipelineState = useAppStore((s) => s.pipelineState)
   const maxSeconds = useAppStore((s) => s.config.max_recording_seconds)
   const [seconds, setSeconds] = useState(0)
+  const startRef = useRef<number>(0)
+  const rafRef = useRef<number>(0)
   const stoppedRef = useRef(false)
 
   useEffect(() => {
@@ -14,8 +16,15 @@ export function DurationTimer() {
       stoppedRef.current = false
       return
     }
-    const interval = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => clearInterval(interval)
+
+    startRef.current = Date.now()
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - startRef.current) / 1000)
+      setSeconds(elapsed)
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
   }, [pipelineState])
 
   useEffect(() => {

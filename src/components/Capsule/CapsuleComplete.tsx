@@ -1,17 +1,23 @@
 import { motion } from 'framer-motion'
 import { Check } from 'lucide-react'
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../../stores/appStore'
 import { spring } from '../../lib/animations'
 
 export function CapsuleComplete() {
+  const { t } = useTranslation()
   const resetRecording = useAppStore((s) => s.resetRecording)
   const setPipelineState = useAppStore((s) => s.setPipelineState)
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      resetRecording()
-      setPipelineState('idle')
+      // Guard: only reset if still in outputting state (don't wipe a new recording)
+      const currentState = useAppStore.getState().pipelineState
+      if (currentState === 'outputting') {
+        resetRecording()
+        setPipelineState('idle')
+      }
     }, 1200)
     return () => clearTimeout(timer)
   }, [resetRecording, setPipelineState])
@@ -25,7 +31,7 @@ export function CapsuleComplete() {
       >
         <Check size={14} className="text-white" />
       </motion.div>
-      <span className="text-[11px] text-white font-medium">Done</span>
+      <span className="text-[11px] text-white font-medium">{t('capsule.done')}</span>
     </motion.div>
   )
 }

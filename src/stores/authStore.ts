@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { authClient } from '../lib/auth-client'
 import { getSubscriptionStatus } from '../lib/api'
 import { toast } from '../components/Toast'
+import i18n from '../i18n'
 
 let sttWarningShown = false
 let llmWarningShown = false
@@ -220,7 +221,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         status.sttSecondsUsed / status.sttSecondsLimit >= 0.9 &&
         !sttWarningShown
       ) {
-        toast('STT quota is above 90%. Consider switching to BYOK mode.', 'error')
+        toast(i18n.t('account.sttQuotaWarning'), 'error')
         sttWarningShown = true
       }
       if (
@@ -228,7 +229,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         status.llmTokensUsed / status.llmTokensLimit >= 0.9 &&
         !llmWarningShown
       ) {
-        toast('LLM quota is above 90%. Consider switching to BYOK mode.', 'error')
+        toast(i18n.t('account.llmQuotaWarning'), 'error')
         llmWarningShown = true
       }
     } catch (e) {

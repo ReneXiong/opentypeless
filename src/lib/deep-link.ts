@@ -67,10 +67,10 @@ async function handleDeepLinkUrl(rawUrl: string) {
     }
     // Validate CSRF state
     if (state !== pendingOAuthState) {
-      pendingOAuthState = null
+      clearOAuthState()
       return
     }
-    pendingOAuthState = null
+    clearOAuthState()
 
     if (token && isValidToken(token)) {
       await useAuthStore.getState().handleDeepLinkToken(token)

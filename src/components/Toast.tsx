@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, XCircle, Info } from 'lucide-react'
 import { spring } from '../lib/animations'
@@ -34,6 +34,7 @@ const colors: Record<ToastType, string> = {
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   const remove = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
@@ -43,10 +44,17 @@ export function ToastContainer() {
     addToast = (text: string, type: ToastType = 'info') => {
       const id = Date.now()
       setToasts((prev) => [...prev, { id, text, type }])
-      setTimeout(() => remove(id), 3000)
+      const timer = setTimeout(() => {
+        timersRef.current.delete(timer)
+        remove(id)
+      }, 3000)
+      timersRef.current.add(timer)
     }
     return () => {
       addToast = () => {}
+      // Clear all pending timers on unmount
+      timersRef.current.forEach(clearTimeout)
+      timersRef.current.clear()
     }
   }, [remove])
 

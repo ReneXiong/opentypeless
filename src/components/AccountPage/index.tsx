@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { LogOut, Upload, Download, Loader2, ExternalLink } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useAuthStore } from '../../stores/authStore'
-import { useAppStore } from '../../stores/appStore'
+import { useAppStore, AppConfig } from '../../stores/appStore'
 import { API_BASE_URL } from '../../lib/constants'
 import { uploadBackup, downloadBackup, createPortalSession } from '../../lib/api'
 import { generateOAuthState, clearOAuthState } from '../../lib/deep-link'
@@ -389,9 +389,9 @@ function AccountDetails() {
     try {
       const { stt_api_key: _stt_api_key, llm_api_key: _llm_api_key, ...safeConfig } = config
       await uploadBackup({ history, dictionary, settings: safeConfig })
-      setBackupMsg('Backup uploaded successfully')
+      setBackupMsg(t('account.backupSuccess'))
     } catch (e) {
-      setBackupMsg(e instanceof Error ? e.message : 'Backup failed')
+      setBackupMsg(e instanceof Error ? e.message : t('account.backupFailed'))
     } finally {
       setBackupLoading(false)
     }
@@ -402,12 +402,23 @@ function AccountDetails() {
     setBackupMsg(null)
     try {
       const data = await downloadBackup()
-      if (data.history) setHistory(data.history as never)
-      if (data.dictionary) setDictionary(data.dictionary as never)
-      if (data.settings) setConfig(data.settings as never)
-      setBackupMsg('Restore completed')
+      if (data.history && Array.isArray(data.history)) setHistory(data.history)
+      if (data.dictionary && Array.isArray(data.dictionary)) setDictionary(data.dictionary)
+      if (data.settings && typeof data.settings === 'object') {
+        const current = useAppStore.getState().config
+        const restored = data.settings as Record<string, unknown>
+        // Deep-merge per-provider API key maps to preserve keys added after backup
+        const merged: AppConfig = {
+          ...current,
+          ...restored,
+          stt_api_keys: { ...current.stt_api_keys, ...((restored.stt_api_keys as Record<string, string>) ?? {}) },
+          llm_api_keys: { ...current.llm_api_keys, ...((restored.llm_api_keys as Record<string, string>) ?? {}) },
+        }
+        setConfig(merged)
+      }
+      setBackupMsg(t('account.restoreSuccess'))
     } catch (e) {
-      setBackupMsg(e instanceof Error ? e.message : 'Restore failed')
+      setBackupMsg(e instanceof Error ? e.message : t('account.restoreFailed'))
     } finally {
       setBackupLoading(false)
     }
@@ -419,7 +430,7 @@ function AccountDetails() {
       const { url } = await createPortalSession()
       await openUrl(url)
     } catch (e) {
-      setBackupMsg(e instanceof Error ? e.message : 'Failed to open subscription management')
+      setBackupMsg(e instanceof Error ? e.message : t('account.manageSubscriptionFailed'))
     } finally {
       setPortalLoading(false)
     }
