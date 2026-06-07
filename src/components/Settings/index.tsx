@@ -41,8 +41,8 @@ export function Settings() {
           </div>
 
           {/* Pane content */}
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <AnimatePresence mode="sync">
+          <div className="flex-1 overflow-y-auto px-6 py-5 relative">
+            <AnimatePresence mode="wait">
               <motion.div
                 key={activePane}
                 className="w-full"
