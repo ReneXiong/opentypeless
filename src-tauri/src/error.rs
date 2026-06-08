@@ -26,6 +26,8 @@ pub enum AppError {
     Timeout(Duration),
     Api { status: u16, body: String },
     Auth(String),
+    Quota(String),
+    LlmQuota(String),
     Output(String),
     Config(String),
 }
@@ -37,6 +39,8 @@ impl AppError {
             AppError::Timeout(_) => true,
             AppError::Api { status, .. } => *status >= 500,
             AppError::Auth(_) => false,
+            AppError::Quota(_) => false,
+            AppError::LlmQuota(_) => false,
             AppError::Output(_) => false,
             AppError::Config(_) => false,
         }
@@ -92,6 +96,20 @@ impl AppError {
                 "Please check your API key in Settings".to_string(),
                 false,
             ),
+            AppError::Quota(msg) => (
+                "stt_quota_exceeded".to_string(),
+                "Speech quota exceeded".to_string(),
+                Some(msg.clone()),
+                "Upgrade to Pro or switch to BYOK mode".to_string(),
+                false,
+            ),
+            AppError::LlmQuota(msg) => (
+                "llm_quota_exceeded".to_string(),
+                "AI quota exceeded".to_string(),
+                Some(msg.clone()),
+                "Upgrade to Pro or switch to BYOK mode".to_string(),
+                false,
+            ),
             AppError::Output(msg) => (
                 "output_fallback_clipboard".to_string(),
                 "Output failed".to_string(),
@@ -131,6 +149,8 @@ impl std::fmt::Display for AppError {
             AppError::Timeout(d) => write!(f, "Timeout after {:.1}s", d.as_secs_f64()),
             AppError::Api { status, body } => write!(f, "API error {}: {}", status, body),
             AppError::Auth(msg) => write!(f, "Auth error: {}", msg),
+            AppError::Quota(msg) => write!(f, "STT quota exceeded: {}", msg),
+            AppError::LlmQuota(msg) => write!(f, "LLM quota exceeded: {}", msg),
             AppError::Output(msg) => write!(f, "Output error: {}", msg),
             AppError::Config(msg) => write!(f, "Config error: {}", msg),
         }
@@ -341,5 +361,31 @@ mod tests {
             body: "rate limited".to_string(),
         };
         assert!(err.to_string().contains("429"));
+    }
+
+    #[test]
+    fn test_quota_is_not_retryable() {
+        let err = AppError::Quota("quota exceeded".to_string());
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn test_llm_quota_is_not_retryable() {
+        let err = AppError::LlmQuota("llm quota exceeded".to_string());
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn test_quota_maps_to_quota_code() {
+        let err = AppError::Quota("quota exceeded".to_string());
+        let ue = err.to_user_error();
+        assert_eq!(ue.code, "stt_quota_exceeded");
+    }
+
+    #[test]
+    fn test_llm_quota_maps_to_llm_quota_code() {
+        let err = AppError::LlmQuota("llm quota exceeded".to_string());
+        let ue = err.to_user_error();
+        assert_eq!(ue.code, "llm_quota_exceeded");
     }
 }

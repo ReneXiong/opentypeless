@@ -1,6 +1,6 @@
 use anyhow::Result;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings as EnigoSettings};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tauri::Manager;
@@ -217,6 +217,38 @@ impl PipelineState {
     }
 }
 
+// ─── STT Session Control ───
+
+#[derive(Clone)]
+struct SttTaskControl {
+    id: u64,
+    done: Arc<Notify>,
+    abort: Arc<Notify>,
+}
+
+fn should_finalize_stt_task(
+    abort_flag: &AtomicBool,
+    active_session_id: &AtomicU64,
+    task_session_id: u64,
+) -> bool {
+    !abort_flag.load(Ordering::SeqCst)
+        && active_session_id.load(Ordering::SeqCst) == task_session_id
+}
+
+fn take_matching_stt_error(
+    stt_error: &Mutex<Option<(u64, UserError)>>,
+    session_id: u64,
+) -> Option<UserError> {
+    let mut guard = stt_error.lock().unwrap_or_else(|e| e.into_inner());
+    if guard
+        .as_ref()
+        .is_some_and(|(latched_session_id, _)| *latched_session_id == session_id)
+    {
+        return guard.take().map(|(_, error)| error);
+    }
+    None
+}
+
 pub struct PipelineHandle {
     app_handle: tauri::AppHandle,
     state: Arc<AtomicU8>,
@@ -227,6 +259,9 @@ pub struct PipelineHandle {
     /// Collected during recording, sent as WAV to multimodal LLM on stop.
     audio_buffer: Arc<Mutex<Vec<u8>>>,
     stt_done: Arc<Notify>,
+    stt_session: Arc<Mutex<Option<SttTaskControl>>>,
+    stt_error: Arc<Mutex<Option<(u64, UserError)>>>,
+    active_stt_session_id: Arc<AtomicU64>,
     abort_flag: Arc<AtomicBool>,
     preloaded_config: Arc<Mutex<Option<storage::AppConfig>>>,
     preloaded_app_ctx: Arc<Mutex<Option<app_detector::AppContext>>>,
@@ -254,6 +289,9 @@ impl PipelineHandle {
             accumulated_text: Arc::new(Mutex::new(String::new())),
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
             stt_done: Arc::new(Notify::new()),
+            stt_session: Arc::new(Mutex::new(None)),
+            stt_error: Arc::new(Mutex::new(None)),
+            active_stt_session_id: Arc::new(AtomicU64::new(0)),
             abort_flag: Arc::new(AtomicBool::new(false)),
             preloaded_config: Arc::new(Mutex::new(None)),
             preloaded_app_ctx: Arc::new(Mutex::new(None)),
@@ -302,6 +340,8 @@ impl PipelineHandle {
 
         // Set abort flag so any running stop() exits early
         self.abort_flag.store(true, Ordering::SeqCst);
+        // Invalidate any active STT session
+        self.active_stt_session_id.fetch_add(1, Ordering::SeqCst);
 
         // Stop audio capture (closes channel → STT task terminates naturally)
         {
@@ -310,6 +350,12 @@ impl PipelineHandle {
                 h.stop();
             }
             *handle = None;
+        }
+
+        // Signal STT session to abort
+        if let Some(control) = self.stt_session.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            control.abort.notify_one();
+            control.done.notify_one();
         }
 
         // Unblock stop() if it's waiting on stt_done.notified()
@@ -624,6 +670,18 @@ impl PipelineHandle {
         let stt_done = self.stt_done.clone();
         let audio_buffer = self.audio_buffer.clone();
         let error_emitted = self.error_emitted.clone();
+        let abort_flag_ref = self.abort_flag.clone();
+        let active_session_id_ref = self.active_stt_session_id.clone();
+        let stt_error_ref = self.stt_error.clone();
+
+        // Create STT session control
+        let session_id = self.active_stt_session_id.fetch_add(1, Ordering::SeqCst) + 1;
+        let stt_control = SttTaskControl {
+            id: session_id,
+            done: Arc::new(Notify::new()),
+            abort: Arc::new(Notify::new()),
+        };
+        *self.stt_session.lock().unwrap_or_else(|e| e.into_inner()) = Some(stt_control.clone());
 
         tokio::spawn(async move {
             // Forward audio to STT and receive transcripts
@@ -631,7 +689,20 @@ impl PipelineHandle {
             let mut audio_bytes_sent: u64 = 0;
             let mut last_partial = String::new();
             loop {
+                // Check if this session is still valid
+                if !should_finalize_stt_task(
+                    abort_flag_ref.as_ref(),
+                    active_session_id_ref.as_ref(),
+                    stt_control.id,
+                ) {
+                    break;
+                }
+
                 tokio::select! {
+                    _ = stt_control.abort.notified() => {
+                        tracing::info!("STT task received abort signal");
+                        break;
+                    }
                     chunk = audio_rx.recv() => {
                         match chunk {
                             Some(data) => {
@@ -656,16 +727,38 @@ impl PipelineHandle {
                                     audio_chunks_sent, audio_bytes_sent
                                 );
                                 // Audio channel closed — disconnect and capture final transcript
-                                let disconnect_result = provider.disconnect().await;
+                                if !should_finalize_stt_task(
+                                    abort_flag_ref.as_ref(),
+                                    active_session_id_ref.as_ref(),
+                                    stt_control.id,
+                                ) {
+                                    break;
+                                }
+
+                                let disconnect_result = tokio::select! {
+                                    _ = stt_control.abort.notified() => None,
+                                    result = provider.disconnect() => Some(result),
+                                };
+
                                 let disconnect_text = match disconnect_result {
-                                    Ok(Some(text)) => Some(text),
-                                    Ok(None) => None,
-                                    Err(e) => {
+                                    Some(Ok(Some(text))) => Some(text),
+                                    Some(Ok(None)) => None,
+                                    Some(Err(e)) => {
                                         tracing::error!("STT disconnect error: {}", e);
-                                        error_emitted.store(true, Ordering::SeqCst);
-                                        emit_error(&app_handle, stt_error(e));
+                                        if should_finalize_stt_task(
+                                            abort_flag_ref.as_ref(),
+                                            active_session_id_ref.as_ref(),
+                                            stt_control.id,
+                                        ) {
+                                            error_emitted.store(true, Ordering::SeqCst);
+                                            let user_error = stt_error(e);
+                                            *stt_error_ref.lock().unwrap_or_else(|e| e.into_inner()) =
+                                                Some((stt_control.id, user_error.clone()));
+                                            emit_error(&app_handle, user_error);
+                                        }
                                         None
                                     }
+                                    None => None,
                                 };
 
                                 // Use disconnect text if available, otherwise use last partial
@@ -678,7 +771,11 @@ impl PipelineHandle {
                                     }
                                 });
 
-                                if !final_text.is_empty() {
+                                if !final_text.is_empty() && should_finalize_stt_task(
+                                    abort_flag_ref.as_ref(),
+                                    active_session_id_ref.as_ref(),
+                                    stt_control.id,
+                                ) {
                                     let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
                                     acc.push_str(&final_text);
                                     let current = acc.clone();
@@ -692,38 +789,56 @@ impl PipelineHandle {
                     transcript = provider.recv_transcript() => {
                         match transcript {
                             Ok(Some(TranscriptEvent::Partial { text })) => {
-                                tracing::debug!("STT partial: {:?}", text);
-                                last_partial = text.clone();
-                                let _ = app_handle.emit("stt:partial", &text);
+                                if should_finalize_stt_task(
+                                    abort_flag_ref.as_ref(),
+                                    active_session_id_ref.as_ref(),
+                                    stt_control.id,
+                                ) {
+                                    tracing::debug!("STT partial: {:?}", text);
+                                    last_partial = text.clone();
+                                    let _ = app_handle.emit("stt:partial", &text);
+                                }
                             }
                             Ok(Some(TranscriptEvent::Final { text, .. })) => {
-                                tracing::info!("STT final: {:?}", text);
-                                // Deepgram sometimes sends a truncated final that is shorter
-                                // than the last partial. If so, use the partial instead.
-                                let text_to_use = if !last_partial.is_empty() && text.len() < last_partial.len() {
-                                    tracing::warn!(
-                                        "STT final shorter than last partial, using partial: {:?}",
-                                        last_partial
-                                    );
-                                    last_partial.clone()
-                                } else {
-                                    text
-                                };
-                                last_partial.clear();
-                                let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
-                                acc.push_str(&text_to_use);
-                                acc.push(' ');
-                                let current = acc.clone();
-                                drop(acc);
-                                let _ = app_handle.emit("stt:final", &current);
+                                if should_finalize_stt_task(
+                                    abort_flag_ref.as_ref(),
+                                    active_session_id_ref.as_ref(),
+                                    stt_control.id,
+                                ) {
+                                    tracing::info!("STT final: {:?}", text);
+                                    // Deepgram sometimes sends a truncated final that is shorter
+                                    // than the last partial. If so, use the partial instead.
+                                    let text_to_use = if !last_partial.is_empty() && text.len() < last_partial.len() {
+                                        tracing::warn!(
+                                            "STT final shorter than last partial, using partial: {:?}",
+                                            last_partial
+                                        );
+                                        last_partial.clone()
+                                    } else {
+                                        text
+                                    };
+                                    last_partial.clear();
+                                    let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
+                                    acc.push_str(&text_to_use);
+                                    acc.push(' ');
+                                    let current = acc.clone();
+                                    drop(acc);
+                                    let _ = app_handle.emit("stt:final", &current);
+                                }
                             }
                             Ok(Some(TranscriptEvent::Error { message })) => {
                                 tracing::error!("STT error: {}", message);
-                                error_emitted.store(true, Ordering::SeqCst);
-                                emit_error(&app_handle, stt_error(message));
-                                // Break out of the loop — STT has failed, no point
-                                // continuing. Without break, the loop keeps running
-                                // and the pipeline stays stuck in Recording forever.
+                                if should_finalize_stt_task(
+                                    abort_flag_ref.as_ref(),
+                                    active_session_id_ref.as_ref(),
+                                    stt_control.id,
+                                ) {
+                                    error_emitted.store(true, Ordering::SeqCst);
+                                    let user_error = stt_error(message);
+                                    *stt_error_ref.lock().unwrap_or_else(|e| e.into_inner()) =
+                                        Some((stt_control.id, user_error.clone()));
+                                    emit_error(&app_handle, user_error);
+                                }
                                 break;
                             }
                             Err(e) => {
@@ -737,6 +852,7 @@ impl PipelineHandle {
             }
 
             // Signal that STT processing is complete
+            stt_control.done.notify_one();
             stt_done.notify_one();
         });
 
@@ -1098,13 +1214,46 @@ impl PipelineHandle {
     /// Returns `Ok(Some(text))` on success, `Ok(None)` if aborted or no speech,
     /// or `Err` on failure.
     async fn wait_for_stt(&self) -> Result<Option<String>> {
-        let stt_done = self.stt_done.clone();
-        tokio::select! {
-            _ = stt_done.notified() => {
-                tracing::debug!("STT task completed");
+        // Take the STT session control for waiting
+        let stt_control = self.stt_session.lock().unwrap_or_else(|e| e.into_inner()).take();
+
+        if let Some(control) = &stt_control {
+            tokio::select! {
+                _ = control.done.notified() => {
+                    tracing::debug!("STT task completed");
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(STT_FINALIZE_TIMEOUT_SECS)) => {
+                    tracing::warn!("STT timed out after {}s", STT_FINALIZE_TIMEOUT_SECS);
+                }
             }
-            _ = tokio::time::sleep(std::time::Duration::from_secs(STT_FINALIZE_TIMEOUT_SECS)) => {
-                tracing::warn!("STT timed out after {}s", STT_FINALIZE_TIMEOUT_SECS);
+
+            // Check if this session is still valid
+            if !should_finalize_stt_task(
+                self.abort_flag.as_ref(),
+                self.active_stt_session_id.as_ref(),
+                control.id,
+            ) {
+                tracing::info!("Ignoring stale or aborted STT task");
+                return Ok(None);
+            }
+
+            // Check for latched errors
+            if let Some(error) = take_matching_stt_error(&self.stt_error, control.id) {
+                tracing::info!("STT had latched error: {}", error.code);
+                self.set_state(PipelineState::Idle);
+                return Ok(None);
+            }
+        } else {
+            tracing::warn!("No STT session was available to wait for");
+            // Fallback to simple stt_done wait
+            let stt_done = self.stt_done.clone();
+            tokio::select! {
+                _ = stt_done.notified() => {
+                    tracing::debug!("STT task completed (fallback)");
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(STT_FINALIZE_TIMEOUT_SECS)) => {
+                    tracing::warn!("STT timed out after {}s (fallback)", STT_FINALIZE_TIMEOUT_SECS);
+                }
             }
         }
 

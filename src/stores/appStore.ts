@@ -171,6 +171,7 @@ interface AppState {
   savedConfig: AppConfig | null
   setSavedConfig: (config: AppConfig) => void
   resetConfig: () => void
+  applyPersistedConfigPatch: (patch: Partial<AppConfig>) => void
 
   // Auto-save status (app-level, persists across route changes)
   autoSaveStatus: 'idle' | 'saving' | 'error'
@@ -287,6 +288,11 @@ export const useAppStore = create<AppState>((set) => ({
   savedConfig: null,
   setSavedConfig: (savedConfig) => set({ savedConfig }),
   resetConfig: () => set((s) => (s.savedConfig ? { config: { ...s.savedConfig } } : {})),
+  applyPersistedConfigPatch: (patch) =>
+    set((s) => ({
+      config: { ...s.config, ...patch },
+      savedConfig: s.savedConfig ? { ...s.savedConfig, ...patch } : s.savedConfig,
+    })),
 
   autoSaveStatus: 'idle',
   autoSaveError: null,

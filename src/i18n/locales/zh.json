@@ -354,6 +354,16 @@
       "details": "LLM 服务返回错误",
       "action": "原始转录已保存"
     },
+    "stt_quota_exceeded": {
+      "summary": "语音配额已用完",
+      "details": "云端语音配额已用完",
+      "action": "升级到 Pro 或切换到自带密钥模式"
+    },
+    "llm_quota_exceeded": {
+      "summary": "AI 配额已用完",
+      "details": "云端 AI 配额已用完",
+      "action": "升级到 Pro 或切换到自带密钥模式"
+    },
     "multimodal_failed": {
       "summary": "多模态处理失败",
       "details": "多模态 LLM 返回错误",

@@ -354,6 +354,16 @@
       "details": "The LLM service returned an error",
       "action": "Raw transcription has been saved"
     },
+    "stt_quota_exceeded": {
+      "summary": "Speech quota exceeded",
+      "details": "Cloud speech quota has been used up",
+      "action": "Upgrade to Pro or switch to BYOK mode"
+    },
+    "llm_quota_exceeded": {
+      "summary": "AI quota exceeded",
+      "details": "Cloud AI quota has been used up",
+      "action": "Upgrade to Pro or switch to BYOK mode"
+    },
     "multimodal_failed": {
       "summary": "Multimodal processing failed",
       "details": "The multimodal LLM returned an error",
