@@ -69,11 +69,31 @@ impl LlmProvider for OpenAiProvider {
             "stream": on_chunk.is_some()
         });
 
+        // Apply reasoning_effort for OpenAI-compatible APIs
+        // Map "off" to "none" for OpenRouter, or skip for other providers
+        if !config.reasoning_effort.is_empty() {
+            if let Some(obj) = body.as_object_mut() {
+                let effort = if config.reasoning_effort == "off" {
+                    // OpenRouter supports "none" to disable reasoning
+                    // For other providers, we just don't send the parameter
+                    if config.base_url.contains("openrouter") {
+                        "none".to_string()
+                    } else {
+                        "low".to_string()
+                    }
+                } else {
+                    config.reasoning_effort.clone()
+                };
+                obj.insert("reasoning_effort".to_string(), serde_json::json!(effort));
+            }
+        }
+
         // GLM-4.7/4.5/5 default to thinking mode, but without explicitly enabling it
         // the API may return content in reasoning_content only, leaving content empty.
         // Explicitly enable thinking so both fields are properly populated.
         // Thinking mode also requires temperature >= 0.6 (recommended 1.0).
-        if config.model.starts_with("glm-") {
+        // Skip thinking for "off" or "low" effort to speed up responses.
+        if config.model.starts_with("glm-") && config.reasoning_effort != "off" && config.reasoning_effort != "low" {
             if let Some(obj) = body.as_object_mut() {
                 obj.insert(
                     "thinking".to_string(),
@@ -97,7 +117,7 @@ impl LlmProvider for OpenAiProvider {
                 .header("Authorization", format!("Bearer {}", config.api_key))
                 .header("Content-Type", "application/json")
                 .json(&body)
-                .timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(60))
                 .send()
                 .await
             {

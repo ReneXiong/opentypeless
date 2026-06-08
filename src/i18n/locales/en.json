@@ -194,7 +194,13 @@
     "traditional": "Traditional (STT + LLM)",
     "multimodal": "Multimodal (Audio → LLM)",
     "traditionalDescription": "Use a dedicated STT provider for transcription, then polish with an LLM.",
-    "multimodalDescription": "Send audio directly to a multimodal LLM (e.g. GPT-4o, Gemini) for transcription + polishing in one step."
+    "multimodalDescription": "Send audio directly to a multimodal LLM (e.g. GPT-4o, Gemini) for transcription + polishing in one step.",
+    "reasoningEffort": "Thinking Effort",
+    "effortOff": "Off",
+    "effortLow": "Low",
+    "effortMedium": "Medium",
+    "effortHigh": "High",
+    "reasoningEffortDesc": "Controls how much the model thinks before responding. Off = no thinking (fastest), Higher = better quality."
   },
   "dictionary": {
     "word": "Word",
@@ -304,13 +310,92 @@
     "reload": "Reload"
   },
   "errors": {
-    "stt_invalid_key": "Invalid API Key, please check settings",
-    "stt_timeout": "Connection timeout, retrying...",
-    "stt_network": "Network error, retrying...",
-    "stt_failed": "Speech recognition failed, please check your network",
-    "llm_failed": "Text polish failed, raw transcription saved",
-    "output_fallback_clipboard": "Copied to clipboard, paste manually",
-    "output_wayland_unsupported": "Keyboard output unsupported on Wayland, switched to clipboard mode",
-    "output_xdotool_missing": "xdotool not found, install it for keyboard output: sudo apt install xdotool"
+    "default": {
+      "summary": "An error occurred",
+      "action": "Please try again"
+    },
+    "stt_invalid_key": {
+      "summary": "Invalid API Key",
+      "details": "The STT API key is invalid or has expired",
+      "action": "Please check your API key in Settings"
+    },
+    "stt_timeout": {
+      "summary": "Connection timeout",
+      "details": "The STT service did not respond in time",
+      "action": "Please check your network connection and try again"
+    },
+    "stt_network": {
+      "summary": "Network error",
+      "details": "Could not connect to the STT service",
+      "action": "Please check your internet connection"
+    },
+    "stt_rate_limited": {
+      "summary": "Rate limit exceeded",
+      "details": "Too many requests to the STT service",
+      "action": "Please wait a moment and try again"
+    },
+    "stt_failed": {
+      "summary": "Speech recognition failed",
+      "details": "The STT service returned an error",
+      "action": "Please check your STT configuration"
+    },
+    "llm_invalid_key": {
+      "summary": "Invalid LLM API Key",
+      "details": "The LLM API key is invalid or has expired",
+      "action": "Please check your API key in Settings"
+    },
+    "llm_rate_limited": {
+      "summary": "LLM rate limit exceeded",
+      "details": "Too many requests to the LLM service",
+      "action": "Please wait a moment and try again"
+    },
+    "llm_failed": {
+      "summary": "Text polish failed",
+      "details": "The LLM service returned an error",
+      "action": "Raw transcription has been saved"
+    },
+    "multimodal_failed": {
+      "summary": "Multimodal processing failed",
+      "details": "The multimodal LLM returned an error",
+      "action": "Please check your LLM configuration"
+    },
+    "output_fallback_clipboard": {
+      "summary": "Output failed",
+      "details": "Could not type text into the active application",
+      "action": "Text copied to clipboard, paste manually"
+    },
+    "output_wayland_unsupported": {
+      "summary": "Keyboard output unsupported",
+      "details": "Wayland does not support keyboard simulation",
+      "action": "Switched to clipboard mode"
+    },
+    "output_xdotool_missing": {
+      "summary": "xdotool not found",
+      "details": "Keyboard output requires xdotool",
+      "action": "Install with: sudo apt install xdotool"
+    },
+    "no_speech": {
+      "summary": "No speech detected",
+      "details": "No audio was captured during recording",
+      "action": "Please try speaking again"
+    },
+    "no_audio": {
+      "summary": "No audio captured",
+      "details": "The microphone did not capture any audio",
+      "action": "Please check your microphone settings"
+    },
+    "config_error": {
+      "summary": "Configuration error",
+      "details": "The application configuration is invalid",
+      "action": "Please check your settings"
+    },
+    "ACCESSIBILITY_REQUIRED": {
+      "summary": "Accessibility needed",
+      "details": "Keyboard output requires Accessibility permission on macOS",
+      "action": "Open Settings to grant permission"
+    },
+    "retry": "Retry",
+    "openSettings": "Settings",
+    "copy": "Copy"
   }
 }

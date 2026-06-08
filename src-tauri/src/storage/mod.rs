@@ -36,6 +36,9 @@ pub struct AppConfig {
     pub llm_api_keys: HashMap<String, String>,
     /// Processing mode: "traditional" (STT → LLM polish) or "multimodal" (audio → multimodal LLM).
     pub processing_mode: String,
+    /// Reasoning effort level: "low", "medium", or "high".
+    /// Controls how much thinking the LLM does before responding.
+    pub reasoning_effort: String,
 }
 
 impl Default for AppConfig {
@@ -68,6 +71,7 @@ impl Default for AppConfig {
             stt_api_keys: HashMap::new(),
             llm_api_keys: HashMap::new(),
             processing_mode: "traditional".to_string(),
+            reasoning_effort: "low".to_string(),
         }
     }
 }

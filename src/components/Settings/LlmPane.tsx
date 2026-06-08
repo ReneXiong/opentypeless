@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAppStore } from '../../stores/appStore'
+import { useAppStore, type AppConfig } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
 import { LLM_PROVIDERS, LLM_DEFAULT_CONFIG, TARGET_LANGUAGES } from '../../lib/constants'
 import { benchLlmConnection, fetchLlmModels } from '../../lib/tauri'
 import { FormField } from './shared/FormField'
 import { Toggle } from './shared/Toggle'
+import { SegmentedControl } from './shared/SegmentedControl'
 import { CheckCircle2, XCircle, Loader2, RefreshCw, Crown } from 'lucide-react'
 
 export function LlmPane() {
@@ -212,6 +213,22 @@ export function LlmPane() {
           </FormField>
         </>
       )}
+
+      <FormField label={t('settings.reasoningEffort')}>
+        <SegmentedControl
+          options={[
+            { value: 'off', label: t('settings.effortOff') },
+            { value: 'low', label: t('settings.effortLow') },
+            { value: 'medium', label: t('settings.effortMedium') },
+            { value: 'high', label: t('settings.effortHigh') },
+          ]}
+          value={config.reasoning_effort}
+          onChange={(v) => updateConfig({ reasoning_effort: v as AppConfig['reasoning_effort'] })}
+        />
+        <p className="text-[11px] text-text-tertiary mt-1.5">
+          {t('settings.reasoningEffortDesc')}
+        </p>
+      </FormField>
 
       <div className="space-y-3 pt-1">
         <Toggle

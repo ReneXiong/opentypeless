@@ -2,6 +2,8 @@ pub mod assemblyai;
 pub mod cloud;
 pub mod config;
 pub mod deepgram;
+pub mod mimo_asr;
+pub mod noop;
 pub mod whisper_compat;
 
 use async_trait::async_trait;
@@ -54,6 +56,7 @@ pub fn create_provider(
     client: Option<reqwest::Client>,
 ) -> Box<dyn SttProvider> {
     match provider_name {
+        "noop" => Box::new(noop::NoopSttProvider::new()),
         "cloud" => {
             let api_base_url = crate::api_base_url();
             match client {
@@ -68,6 +71,10 @@ pub fn create_provider(
         "deepgram" => match client {
             Some(c) => Box::new(deepgram::DeepgramProvider::with_client(c)),
             None => Box::new(deepgram::DeepgramProvider::new()),
+        },
+        "mimo-asr" => match client {
+            Some(c) => Box::new(mimo_asr::MimoAsrProvider::with_client(c)),
+            None => Box::new(mimo_asr::MimoAsrProvider::new()),
         },
         name => {
             // All Whisper-compatible providers share the same HTTP upload logic.

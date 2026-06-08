@@ -20,6 +20,7 @@ pub fn get_stt_endpoint(provider: &str) -> Option<&'static str> {
         "cloud" => None, // resolved at runtime via api_base_url()
         "deepgram" => Some("https://api.deepgram.com/v1/listen"),
         "assemblyai" => Some("https://api.assemblyai.com/v2/transcript"),
+        "mimo-asr" => Some("https://api.xiaomimimo.com/v1/chat/completions"),
         _ => get_whisper_config(provider).map(|c| c.endpoint),
     }
 }

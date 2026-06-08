@@ -8,11 +8,127 @@ use tokio::sync::Notify;
 
 use crate::app_detector;
 use crate::audio::{AudioCaptureHandle, AudioConfig};
+use crate::error::UserError;
 use crate::llm::{self, LlmConfig, PolishRequest};
 use crate::output::{self, OutputMode};
 use crate::storage;
 use crate::stt::{self, SttConfig, TranscriptEvent};
 use crate::SessionTokenStore;
+
+// ─── Helper functions ───
+
+/// Emit a structured error to the frontend
+fn emit_error(app_handle: &tauri::AppHandle, error: UserError) {
+    let _ = app_handle.emit("pipeline:error", error);
+}
+
+/// Create a structured error for STT connection failure
+fn stt_connection_error(e: impl std::fmt::Display) -> UserError {
+    UserError {
+        code: "stt_connection_failed".to_string(),
+        summary: Some("STT connection failed".to_string()),
+        details: Some(e.to_string()),
+        action: Some("Please check your STT configuration".to_string()),
+        retryable: true,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for audio capture failure
+fn audio_capture_error(e: impl std::fmt::Display) -> UserError {
+    UserError {
+        code: "audio_capture_failed".to_string(),
+        summary: Some("Audio capture failed".to_string()),
+        details: Some(e.to_string()),
+        action: Some("Please check your microphone settings".to_string()),
+        retryable: true,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for STT error
+fn stt_error(e: impl std::fmt::Display) -> UserError {
+    UserError {
+        code: "stt_failed".to_string(),
+        summary: Some("Speech recognition failed".to_string()),
+        details: Some(e.to_string()),
+        action: Some("Please check your STT configuration".to_string()),
+        retryable: true,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for LLM error
+fn llm_error(e: impl std::fmt::Display) -> UserError {
+    UserError {
+        code: "llm_failed".to_string(),
+        summary: Some("Text polish failed".to_string()),
+        details: Some(e.to_string()),
+        action: Some("Raw transcription has been saved".to_string()),
+        retryable: true,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for multimodal error
+fn multimodal_error(e: impl std::fmt::Display) -> UserError {
+    UserError {
+        code: "multimodal_failed".to_string(),
+        summary: Some("Multimodal processing failed".to_string()),
+        details: Some(e.to_string()),
+        action: Some("Please check your LLM configuration".to_string()),
+        retryable: true,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for output failure
+fn output_error(e: impl std::fmt::Display) -> UserError {
+    UserError {
+        code: "output_fallback_clipboard".to_string(),
+        summary: Some("Output failed".to_string()),
+        details: Some(e.to_string()),
+        action: Some("Text copied to clipboard, paste manually".to_string()),
+        retryable: false,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for no speech detected
+fn no_speech_error() -> UserError {
+    UserError {
+        code: "no_speech".to_string(),
+        summary: Some("No speech detected".to_string()),
+        details: Some("No audio was captured during recording".to_string()),
+        action: Some("Please try speaking again".to_string()),
+        retryable: false,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for no audio captured
+fn no_audio_error() -> UserError {
+    UserError {
+        code: "no_audio".to_string(),
+        summary: Some("No audio captured".to_string()),
+        details: Some("The microphone did not capture any audio".to_string()),
+        action: Some("Please check your microphone settings".to_string()),
+        retryable: false,
+        retry_count: 0,
+    }
+}
+
+/// Create a structured error for empty API key
+fn empty_api_key_error(service: &str) -> UserError {
+    UserError {
+        code: format!("{}_invalid_key", service.to_lowercase()),
+        summary: Some(format!("{} API key is empty", service)),
+        details: Some(format!("{} API key is not configured", service)),
+        action: Some("Please configure it in Settings".to_string()),
+        retryable: false,
+        retry_count: 0,
+    }
+}
 
 // ─── Timing constants ───
 
@@ -123,6 +239,9 @@ pub struct PipelineHandle {
     /// Without this, a quick press-release in hold mode causes stop() to run
     /// while start() is still connecting to STT, finding empty fields.
     pipeline_lock: tokio::sync::Mutex<()>,
+    /// Tracks whether an error was already emitted during this recording session.
+    /// Used to prevent "No speech detected" from overwriting the actual error.
+    error_emitted: Arc<AtomicBool>,
 }
 
 impl PipelineHandle {
@@ -143,6 +262,7 @@ impl PipelineHandle {
             recording_start: Arc::new(Mutex::new(None)),
             shared_client,
             pipeline_lock: tokio::sync::Mutex::new(()),
+            error_emitted: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -321,6 +441,8 @@ impl PipelineHandle {
 
         // Reset abort flag for new recording
         self.abort_flag.store(false, Ordering::SeqCst);
+        // Reset error emitted flag for new recording
+        self.error_emitted.store(false, Ordering::SeqCst);
 
         // Atomic CAS: only one caller can transition Idle → Recording
         if self
@@ -384,18 +506,21 @@ impl PipelineHandle {
             config_data.stt_language
         );
 
-        // Guard: empty API key — bail before starting audio (skip for cloud provider)
-        if config_data.stt_api_key.is_empty() && config_data.stt_provider != "cloud" {
-            let _ = self.app_handle.emit(
-                "pipeline:error",
-                "STT API key is not configured. Please set it in Settings → Speech Recognition.",
-            );
+        // Guard: empty API key — bail before starting audio (skip for cloud provider and multimodal mode)
+        if config_data.processing_mode != "multimodal"
+            && config_data.stt_api_key.is_empty()
+            && config_data.stt_provider != "cloud"
+        {
+            emit_error(&self.app_handle, empty_api_key_error("STT"));
             self.cleanup_and_reset();
             return Ok(());
         }
 
-        // P0-3: Pre-connect STT provider before spawning task
-        let stt_api_key = if config_data.stt_provider == "cloud" {
+        // P0-3: Pre-connect STT provider before spawning task (skip in multimodal mode)
+        let stt_api_key = if config_data.processing_mode == "multimodal" {
+            // Multimodal mode: don't need STT connection, use dummy provider
+            String::new()
+        } else if config_data.stt_provider == "cloud" {
             self.app_handle
                 .state::<SessionTokenStore>()
                 .0
@@ -422,13 +547,15 @@ impl PipelineHandle {
             sample_rate: 16000,
         };
 
-        let mut provider =
-            stt::create_provider(&config_data.stt_provider, Some(self.shared_client.clone()));
+        // In multimodal mode, use a no-op provider instead of real STT
+        let mut provider = if config_data.processing_mode == "multimodal" {
+            stt::create_provider("noop", Some(self.shared_client.clone()))
+        } else {
+            stt::create_provider(&config_data.stt_provider, Some(self.shared_client.clone()))
+        };
         if let Err(e) = provider.connect(&stt_config).await {
             tracing::error!("STT connect failed: {}", e);
-            let _ = self
-                .app_handle
-                .emit("pipeline:error", format!("STT connection failed: {e}"));
+            emit_error(&self.app_handle, stt_connection_error(e));
             self.cleanup_and_reset();
             return Ok(());
         }
@@ -439,9 +566,7 @@ impl PipelineHandle {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Audio capture failed: {}", e);
-                let _ = self
-                    .app_handle
-                    .emit("pipeline:error", format!("Audio capture failed: {e}"));
+                emit_error(&self.app_handle, audio_capture_error(e));
                 self.cleanup_and_reset();
                 return Ok(());
             }
@@ -498,6 +623,7 @@ impl PipelineHandle {
         let accumulated = self.accumulated_text.clone();
         let stt_done = self.stt_done.clone();
         let audio_buffer = self.audio_buffer.clone();
+        let error_emitted = self.error_emitted.clone();
 
         tokio::spawn(async move {
             // Forward audio to STT and receive transcripts
@@ -536,7 +662,8 @@ impl PipelineHandle {
                                     Ok(None) => None,
                                     Err(e) => {
                                         tracing::error!("STT disconnect error: {}", e);
-                                        let _ = app_handle.emit("pipeline:error", format!("STT error: {e}"));
+                                        error_emitted.store(true, Ordering::SeqCst);
+                                        emit_error(&app_handle, stt_error(e));
                                         None
                                     }
                                 };
@@ -592,7 +719,8 @@ impl PipelineHandle {
                             }
                             Ok(Some(TranscriptEvent::Error { message })) => {
                                 tracing::error!("STT error: {}", message);
-                                let _ = app_handle.emit("pipeline:error", format!("STT error: {message}"));
+                                error_emitted.store(true, Ordering::SeqCst);
+                                emit_error(&app_handle, stt_error(message));
                                 // Break out of the loop — STT has failed, no point
                                 // continuing. Without break, the loop keeps running
                                 // and the pipeline stays stuck in Recording forever.
@@ -828,9 +956,7 @@ impl PipelineHandle {
             .split_off(0);
 
         if pcm_audio.is_empty() {
-            let _ = self
-                .app_handle
-                .emit("pipeline:error", "No audio captured. Please try again.");
+            emit_error(&self.app_handle, no_audio_error());
             self.set_state(PipelineState::Idle);
             return Ok(());
         }
@@ -868,9 +994,7 @@ impl PipelineHandle {
         };
 
         if llm_api_key.is_empty() && config.llm_provider != "cloud" {
-            let _ = self
-                .app_handle
-                .emit("pipeline:error", "LLM API key is empty. Please configure it in Settings.");
+            emit_error(&self.app_handle, empty_api_key_error("LLM"));
             self.set_state(PipelineState::Idle);
             return Ok(());
         }
@@ -881,6 +1005,7 @@ impl PipelineHandle {
             base_url: config.llm_base_url.clone(),
             max_tokens: 4096,
             temperature: 0.3,
+            reasoning_effort: config.reasoning_effort.clone(),
         };
 
         let provider = crate::multimodal::create_provider(
@@ -956,16 +1081,12 @@ impl PipelineHandle {
                     .await
                 {
                     tracing::error!("Output failed: {}", e);
-                    let _ = self
-                        .app_handle
-                        .emit("pipeline:error", format!("Output failed: {e}"));
+                    emit_error(&self.app_handle, output_error(e));
                 }
             }
             Err(e) => {
                 tracing::error!("Multimodal processing failed: {}", e);
-                let _ = self
-                    .app_handle
-                    .emit("pipeline:error", format!("Multimodal error: {e}"));
+                emit_error(&self.app_handle, multimodal_error(e));
             }
         }
 
@@ -1000,9 +1121,11 @@ impl PipelineHandle {
             .to_string();
 
         if raw_text.is_empty() {
-            let _ = self
-                .app_handle
-                .emit("pipeline:error", "No speech detected. Please try again.");
+            // Only emit "No speech detected" if no other error was already emitted
+            // (e.g., STT 429 rate limit error)
+            if !self.error_emitted.load(Ordering::SeqCst) {
+                emit_error(&self.app_handle, no_speech_error());
+            }
             self.set_state(PipelineState::Idle);
             return Ok(None);
         }
@@ -1034,9 +1157,7 @@ impl PipelineHandle {
             // No polishing — output raw text directly
             if let Err(e) = self.output_text(raw_text, &app_ctx.app_name, config).await {
                 tracing::error!("Output failed: {}", e);
-                let _ = self
-                    .app_handle
-                    .emit("pipeline:error", format!("Output failed: {e}"));
+                emit_error(&self.app_handle, output_error(e));
             }
             return (raw_text.to_string(), std::time::Duration::ZERO);
         }
@@ -1056,6 +1177,7 @@ impl PipelineHandle {
             base_url: config.llm_base_url.clone(),
             max_tokens: 4096,
             temperature: 0.3,
+            reasoning_effort: config.reasoning_effort.clone(),
         };
         let provider = llm::create_provider(&config.llm_provider, Some(self.shared_client.clone()));
 
@@ -1089,9 +1211,7 @@ impl PipelineHandle {
                         .await
                     {
                         tracing::error!("Output failed: {}", e);
-                        let _ = self
-                            .app_handle
-                            .emit("pipeline:error", format!("Output failed: {e}"));
+                        emit_error(&self.app_handle, output_error(e));
                     }
                     (response.polished_text, elapsed)
                 }
@@ -1104,14 +1224,10 @@ impl PipelineHandle {
                     tracing::error!("LLM polish failed: {}, outputting raw text", e);
                     let elapsed = llm_start.elapsed();
 
-                    let _ = self
-                        .app_handle
-                        .emit("pipeline:error", format!("LLM polishing failed: {e}"));
+                    emit_error(&self.app_handle, llm_error(e));
                     if let Err(e) = self.output_text(raw_text, &app_ctx.app_name, config).await {
                         tracing::error!("Output failed: {}", e);
-                        let _ = self
-                            .app_handle
-                            .emit("pipeline:error", format!("Output failed: {e}"));
+                        emit_error(&self.app_handle, output_error(e));
                     }
                     (raw_text.to_string(), elapsed)
                 }
@@ -1181,7 +1297,10 @@ impl PipelineHandle {
                     );
                     let ue = crate::error::UserError {
                         code: "output_wayland_unsupported".to_string(),
-                        details: None,
+                        summary: Some("Keyboard output unsupported".to_string()),
+                        details: Some("Wayland does not support keyboard simulation".to_string()),
+                        action: Some("Switched to clipboard mode".to_string()),
+                        retryable: false,
                         retry_count: 0,
                     };
                     let _ = self.app_handle.emit("pipeline:warning", &ue);

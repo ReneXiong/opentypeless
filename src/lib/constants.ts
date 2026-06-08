@@ -28,6 +28,7 @@ export const STT_PROVIDERS = [
   { value: 'deepgram', label: 'Deepgram Nova-3' },
   { value: 'assemblyai', label: 'AssemblyAI' },
   { value: 'glm-asr', label: 'GLM-ASR (智谱)' },
+  { value: 'mimo-asr', label: 'MiMo ASR (小米)' },
   { value: 'openai-whisper', label: 'OpenAI Whisper' },
   { value: 'groq-whisper', label: 'Groq Whisper' },
   { value: 'siliconflow', label: 'SiliconFlow (硅基流动)' },
@@ -36,6 +37,7 @@ export const STT_PROVIDERS = [
 
 export const LLM_PROVIDERS = [
   { value: 'zhipu', label: '智谱 (Zhipu)' },
+  { value: 'mimo', label: '小米 MiMo' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'siliconflow', label: '硅基流动 (SiliconFlow)' },
   { value: 'openai', label: 'OpenAI' },
@@ -51,6 +53,7 @@ export const LLM_PROVIDERS = [
 
 export const LLM_DEFAULT_CONFIG: Record<string, { baseUrl: string; model: string }> = {
   zhipu: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+  mimo: { baseUrl: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2-flash' },
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
   siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct' },
   openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },

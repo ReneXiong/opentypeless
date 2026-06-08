@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../../stores/appStore'
 import { SettingsSidebar, type PaneId } from './SettingsSidebar'
@@ -41,24 +40,13 @@ export function Settings() {
           </div>
 
           {/* Pane content */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 relative">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activePane}
-                className="w-full"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.1, ease: 'easeOut' }}
-              >
-                {activePane === 'general' && <GeneralPane />}
-                {activePane === 'stt' && <SttPane />}
-                {activePane === 'llm' && <LlmPane />}
-                {activePane === 'dictionary' && <DictionaryPane />}
-                {activePane === 'scenes' && <ScenesPane />}
-                {activePane === 'about' && <AboutPane />}
-              </motion.div>
-            </AnimatePresence>
+          <div className="flex-1 overflow-y-auto px-6 py-5 min-h-0">
+            {activePane === 'general' && <GeneralPane />}
+            {activePane === 'stt' && <SttPane />}
+            {activePane === 'llm' && <LlmPane />}
+            {activePane === 'dictionary' && <DictionaryPane />}
+            {activePane === 'scenes' && <ScenesPane />}
+            {activePane === 'about' && <AboutPane />}
           </div>
         </div>
       </div>

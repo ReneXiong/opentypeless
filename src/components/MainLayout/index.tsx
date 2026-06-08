@@ -138,9 +138,9 @@ export function MainLayout({ children }: Props) {
       </aside>
 
       {/* Content */}
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 flex flex-col min-h-0">
         <AccessibilityBanner />
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div className="flex-1 overflow-y-auto min-h-0">{children}</div>
       </main>
     </div>
   )

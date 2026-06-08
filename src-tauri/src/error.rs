@@ -4,10 +4,17 @@ use tauri::Emitter;
 
 /// Structured error sent to the frontend via Tauri events.
 /// The frontend uses `code` to look up an i18n-translated message.
+/// `summary` is a short message shown in the capsule.
+/// `details` is the full error for expansion.
+/// `action` is a suggested action for the user.
+/// `retryable` indicates if the user can retry the operation.
 #[derive(Debug, Clone, Serialize)]
 pub struct UserError {
     pub code: String,
+    pub summary: Option<String>,
     pub details: Option<String>,
+    pub action: Option<String>,
+    pub retryable: bool,
     pub retry_count: u32,
 }
 
@@ -36,23 +43,76 @@ impl AppError {
     }
 
     pub fn to_user_error(&self) -> UserError {
-        let (code, details) = match self {
-            AppError::Network(msg) => ("stt_network".to_string(), Some(msg.clone())),
-            AppError::Timeout(_) => ("stt_timeout".to_string(), None),
-            AppError::Api { status, body: _ } => {
+        let (code, summary, details, action, retryable) = match self {
+            AppError::Network(msg) => (
+                "stt_network".to_string(),
+                "Network error".to_string(),
+                Some(msg.clone()),
+                "Check your internet connection".to_string(),
+                true,
+            ),
+            AppError::Timeout(_) => (
+                "stt_timeout".to_string(),
+                "Connection timeout".to_string(),
+                None,
+                "Try again later".to_string(),
+                true,
+            ),
+            AppError::Api { status, body } => {
                 if *status == 401 || *status == 403 {
-                    ("stt_invalid_key".to_string(), None)
+                    (
+                        "stt_invalid_key".to_string(),
+                        "Invalid API key".to_string(),
+                        Some(format!("HTTP {}: {}", status, body)),
+                        "Please check your API key in Settings".to_string(),
+                        false,
+                    )
+                } else if *status == 429 {
+                    (
+                        "stt_rate_limited".to_string(),
+                        "Rate limit exceeded".to_string(),
+                        Some(format!("HTTP {}: {}", status, body)),
+                        "Wait a moment and try again".to_string(),
+                        true,
+                    )
                 } else {
-                    ("stt_failed".to_string(), Some(format!("HTTP {}", status)))
+                    (
+                        "stt_failed".to_string(),
+                        "STT request failed".to_string(),
+                        Some(format!("HTTP {}: {}", status, body)),
+                        "Check your STT configuration".to_string(),
+                        true,
+                    )
                 }
             }
-            AppError::Auth(msg) => ("stt_invalid_key".to_string(), Some(msg.clone())),
-            AppError::Output(msg) => ("output_fallback_clipboard".to_string(), Some(msg.clone())),
-            AppError::Config(msg) => ("stt_failed".to_string(), Some(msg.clone())),
+            AppError::Auth(msg) => (
+                "stt_invalid_key".to_string(),
+                "Authentication failed".to_string(),
+                Some(msg.clone()),
+                "Please check your API key in Settings".to_string(),
+                false,
+            ),
+            AppError::Output(msg) => (
+                "output_fallback_clipboard".to_string(),
+                "Output failed".to_string(),
+                Some(msg.clone()),
+                "Text copied to clipboard, paste manually".to_string(),
+                false,
+            ),
+            AppError::Config(msg) => (
+                "stt_failed".to_string(),
+                "Configuration error".to_string(),
+                Some(msg.clone()),
+                "Please check your STT settings".to_string(),
+                false,
+            ),
         };
         UserError {
             code,
+            summary: Some(summary),
             details,
+            action: Some(action),
+            retryable,
             retry_count: 0,
         }
     }

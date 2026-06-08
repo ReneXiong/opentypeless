@@ -1,3 +1,4 @@
+use base64::Engine;
 use crate::api_base_url;
 use crate::stt;
 use crate::SessionTokenStore;
@@ -43,6 +44,49 @@ async fn send_stt_test_request(
                 .get("https://api.assemblyai.com/v2/transcript?limit=1")
                 .header("Authorization", api_key)
                 .timeout(std::time::Duration::from_secs(10))
+                .send()
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "mimo-asr" => {
+            // MiMo ASR uses a chat completions API, not Whisper-compatible multipart.
+            // Send a minimal silent WAV to test the connection.
+            // Note: MiMo ASR API only allows audio part, no text prompt.
+            let silent_pcm = vec![0u8; 3200]; // 0.1s at 16kHz 16-bit mono
+            let wav = stt::whisper_compat::WhisperCompatProvider::build_wav(&silent_pcm, 16000);
+            let audio_b64 = base64::engine::general_purpose::STANDARD.encode(&wav);
+            // MiMo ASR requires data URL format
+            let audio_data_url = format!("data:audio/wav;base64,{}", audio_b64);
+
+            let messages = serde_json::json!([
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio_data_url
+                            }
+                        }
+                    ]
+                }
+            ]);
+
+            let body = serde_json::json!({
+                "model": "mimo-v2.5-asr",
+                "messages": messages,
+                "asr_options": {
+                    "language": "auto"
+                },
+                "stream": false
+            });
+
+            client
+                .post("https://api.xiaomimimo.com/v1/chat/completions")
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .timeout(std::time::Duration::from_secs(15))
                 .send()
                 .await
                 .map_err(|e| e.to_string())

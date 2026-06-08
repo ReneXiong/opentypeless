@@ -75,8 +75,22 @@ impl MultimodalProvider for OpenAiMultimodalProvider {
             "stream": stream,
         });
 
-        // GLM thinking mode support
-        if config.model.starts_with("glm-") {
+        // Apply reasoning_effort for OpenAI-compatible APIs
+        if !config.reasoning_effort.is_empty() {
+            let effort = if config.reasoning_effort == "off" {
+                if config.base_url.contains("openrouter") {
+                    "none".to_string()
+                } else {
+                    "low".to_string()
+                }
+            } else {
+                config.reasoning_effort.clone()
+            };
+            body["reasoning_effort"] = serde_json::json!(effort);
+        }
+
+        // GLM thinking mode support (skip for "off" or "low" effort)
+        if config.model.starts_with("glm-") && config.reasoning_effort != "off" && config.reasoning_effort != "low" {
             body["thinking"] = serde_json::json!({"type": "enabled"});
             body["temperature"] = serde_json::json!(1.0);
             body["top_p"] = serde_json::json!(0.95);

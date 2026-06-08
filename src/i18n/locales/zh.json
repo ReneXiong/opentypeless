@@ -194,7 +194,13 @@
     "traditional": "传统模式（语音识别 + LLM）",
     "multimodal": "多模态（音频 → LLM）",
     "traditionalDescription": "使用专用语音识别服务转录，然后用 LLM 润色。",
-    "multimodalDescription": "直接将音频发送到多模态 LLM（如 GPT-4o、Gemini），一步完成转录 + 润色。"
+    "multimodalDescription": "直接将音频发送到多模态 LLM（如 GPT-4o、Gemini），一步完成转录 + 润色。",
+    "reasoningEffort": "思考努力程度",
+    "effortOff": "关闭",
+    "effortLow": "低",
+    "effortMedium": "中",
+    "effortHigh": "高",
+    "reasoningEffortDesc": "控制模型在回复前的思考程度。关闭 = 不思考（最快），越高质量越好。"
   },
   "dictionary": {
     "word": "词语",
@@ -304,13 +310,92 @@
     "reload": "重新加载"
   },
   "errors": {
-    "stt_invalid_key": "API Key 无效，请检查设置",
-    "stt_timeout": "网络连接超时，正在重试...",
-    "stt_network": "网络错误，正在重试...",
-    "stt_failed": "语音识别失败，请检查网络连接",
-    "llm_failed": "文本润色失败，原始转录已保存",
-    "output_fallback_clipboard": "已复制到剪贴板，请手动粘贴",
-    "output_wayland_unsupported": "Wayland 不支持键盘输出，已切换为剪贴板模式",
-    "output_xdotool_missing": "未找到 xdotool，请安装以使用键盘输出：sudo apt install xdotool"
+    "default": {
+      "summary": "发生错误",
+      "action": "请重试"
+    },
+    "stt_invalid_key": {
+      "summary": "API Key 无效",
+      "details": "语音识别 API Key 无效或已过期",
+      "action": "请在设置中检查你的 API Key"
+    },
+    "stt_timeout": {
+      "summary": "连接超时",
+      "details": "语音识别服务响应超时",
+      "action": "请检查网络连接后重试"
+    },
+    "stt_network": {
+      "summary": "网络错误",
+      "details": "无法连接到语音识别服务",
+      "action": "请检查你的网络连接"
+    },
+    "stt_rate_limited": {
+      "summary": "请求频率超限",
+      "details": "语音识别服务请求过于频繁",
+      "action": "请稍等片刻后重试"
+    },
+    "stt_failed": {
+      "summary": "语音识别失败",
+      "details": "语音识别服务返回错误",
+      "action": "请检查语音识别配置"
+    },
+    "llm_invalid_key": {
+      "summary": "LLM API Key 无效",
+      "details": "LLM API Key 无效或已过期",
+      "action": "请在设置中检查你的 API Key"
+    },
+    "llm_rate_limited": {
+      "summary": "LLM 请求频率超限",
+      "details": "LLM 服务请求过于频繁",
+      "action": "请稍等片刻后重试"
+    },
+    "llm_failed": {
+      "summary": "文本润色失败",
+      "details": "LLM 服务返回错误",
+      "action": "原始转录已保存"
+    },
+    "multimodal_failed": {
+      "summary": "多模态处理失败",
+      "details": "多模态 LLM 返回错误",
+      "action": "请检查 LLM 配置"
+    },
+    "output_fallback_clipboard": {
+      "summary": "输出失败",
+      "details": "无法将文本输入到活动应用",
+      "action": "文本已复制到剪贴板，请手动粘贴"
+    },
+    "output_wayland_unsupported": {
+      "summary": "键盘输出不支持",
+      "details": "Wayland 不支持键盘模拟",
+      "action": "已切换为剪贴板模式"
+    },
+    "output_xdotool_missing": {
+      "summary": "未找到 xdotool",
+      "details": "键盘输出需要 xdotool",
+      "action": "安装命令：sudo apt install xdotool"
+    },
+    "no_speech": {
+      "summary": "未检测到语音",
+      "details": "录音期间未捕获到音频",
+      "action": "请尝试再次说话"
+    },
+    "no_audio": {
+      "summary": "未捕获音频",
+      "details": "麦克风未捕获到任何音频",
+      "action": "请检查麦克风设置"
+    },
+    "config_error": {
+      "summary": "配置错误",
+      "details": "应用程序配置无效",
+      "action": "请检查你的设置"
+    },
+    "ACCESSIBILITY_REQUIRED": {
+      "summary": "需要辅助功能权限",
+      "details": "macOS 上键盘输出需要辅助功能权限",
+      "action": "打开设置以授予权限"
+    },
+    "retry": "重试",
+    "openSettings": "设置",
+    "copy": "复制"
   }
 }

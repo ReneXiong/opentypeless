@@ -72,9 +72,20 @@ export interface AppConfig {
   llm_api_keys: Record<string, string>
   /** Processing mode: "traditional" (STT → LLM polish) or "multimodal" (audio → multimodal LLM). */
   processing_mode: 'traditional' | 'multimodal'
+  /** Reasoning effort level: "off", "low", "medium", or "high". */
+  reasoning_effort: 'off' | 'low' | 'medium' | 'high'
 }
 
 export type TestStatus = 'idle' | 'testing' | 'success' | 'error'
+
+export interface StructuredError {
+  code: string
+  summary?: string
+  details?: string
+  action?: string
+  retryable?: boolean
+  retry_count?: number
+}
 
 interface AppState {
   // Pipeline
@@ -140,6 +151,8 @@ interface AppState {
   // Pipeline error
   pipelineError: string | null
   setPipelineError: (error: string | null) => void
+  structuredError: StructuredError | null
+  setStructuredError: (error: StructuredError | null) => void
 
   // macOS Accessibility permission
   accessibilityTrusted: boolean
@@ -195,6 +208,7 @@ const defaultConfig: AppConfig = {
   stt_api_keys: {},
   llm_api_keys: {},
   processing_mode: 'traditional',
+  reasoning_effort: 'low',
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -250,6 +264,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   pipelineError: null,
   setPipelineError: (pipelineError) => set({ pipelineError }),
+  structuredError: null,
+  setStructuredError: (structuredError) => set({ structuredError }),
 
   accessibilityTrusted: true,
   setAccessibilityTrusted: (accessibilityTrusted) => set({ accessibilityTrusted }),

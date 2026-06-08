@@ -1,3 +1,4 @@
+use crate::error::UserError;
 use crate::pipeline;
 use crate::storage;
 use crate::HotkeyModeCache;
@@ -43,15 +44,39 @@ pub fn build_shortcut_handler(
                         if pipeline.current_state() == pipeline::PipelineState::Idle {
                             if let Err(e) = pipeline.start().await {
                                 tracing::error!("Failed to start recording: {}", e);
-                                let _ = handle.emit("pipeline:error", e.to_string());
+                                let error = UserError {
+                                    code: "pipeline_start_failed".to_string(),
+                                    summary: Some("Failed to start recording".to_string()),
+                                    details: Some(e.to_string()),
+                                    action: Some("Please try again".to_string()),
+                                    retryable: true,
+                                    retry_count: 0,
+                                };
+                                let _ = handle.emit("pipeline:error", error);
                             }
                         } else if let Err(e) = pipeline.stop().await {
                             tracing::error!("Failed to stop recording: {}", e);
-                            let _ = handle.emit("pipeline:error", e.to_string());
+                            let error = UserError {
+                                code: "pipeline_stop_failed".to_string(),
+                                summary: Some("Failed to stop recording".to_string()),
+                                details: Some(e.to_string()),
+                                action: Some("Please try again".to_string()),
+                                retryable: true,
+                                retry_count: 0,
+                            };
+                            let _ = handle.emit("pipeline:error", error);
                         }
                     } else if let Err(e) = pipeline.start().await {
                         tracing::error!("Failed to start recording: {}", e);
-                        let _ = handle.emit("pipeline:error", e.to_string());
+                        let error = UserError {
+                            code: "pipeline_start_failed".to_string(),
+                            summary: Some("Failed to start recording".to_string()),
+                            details: Some(e.to_string()),
+                            action: Some("Please try again".to_string()),
+                            retryable: true,
+                            retry_count: 0,
+                        };
+                        let _ = handle.emit("pipeline:error", error);
                     }
                 });
             }
@@ -67,7 +92,15 @@ pub fn build_shortcut_handler(
                         let pipeline = handle.state::<pipeline::PipelineHandle>();
                         if let Err(e) = pipeline.stop().await {
                             tracing::error!("Failed to stop recording: {}", e);
-                            let _ = handle.emit("pipeline:error", e.to_string());
+                            let error = UserError {
+                                code: "pipeline_stop_failed".to_string(),
+                                summary: Some("Failed to stop recording".to_string()),
+                                details: Some(e.to_string()),
+                                action: Some("Please try again".to_string()),
+                                retryable: true,
+                                retry_count: 0,
+                            };
+                            let _ = handle.emit("pipeline:error", error);
                         }
                     });
                 }

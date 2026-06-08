@@ -14,6 +14,10 @@ pub struct LlmConfig {
     pub base_url: String,
     pub max_tokens: u32,
     pub temperature: f64,
+    /// Reasoning effort level: "low", "medium", or "high".
+    /// Controls how much thinking/reasoning the model does before responding.
+    /// Lower values = faster responses, higher values = better quality.
+    pub reasoning_effort: String,
 }
 
 impl Default for LlmConfig {
@@ -24,6 +28,7 @@ impl Default for LlmConfig {
             base_url: "https://open.bigmodel.cn/api/paas/v4".to_string(),
             max_tokens: 4096,
             temperature: 0.3,
+            reasoning_effort: "low".to_string(),
         }
     }
 }

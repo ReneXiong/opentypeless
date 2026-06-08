@@ -54,7 +54,10 @@ pub async fn output_with_fallback(
             match clipboard.type_text(text).await {
                 Ok(()) => Ok(Some(UserError {
                     code: "output_fallback_clipboard".to_string(),
+                    summary: Some("Output failed".to_string()),
                     details: Some(kb_err.to_string()),
+                    action: Some("Text copied to clipboard, paste manually".to_string()),
+                    retryable: false,
                     retry_count: 0,
                 })),
                 Err(cb_err) => Err(format!(

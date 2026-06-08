@@ -6,6 +6,15 @@ import type { PipelineState } from '../stores/appStore'
 import { getHistory } from '../lib/tauri'
 import { toast } from '../components/Toast'
 
+export interface StructuredError {
+  code: string
+  summary?: string
+  details?: string
+  action?: string
+  retryable?: boolean
+  retry_count?: number
+}
+
 export function useTauriEvents() {
   const { t } = useTranslation()
   const {
@@ -16,6 +25,7 @@ export function useTauriEvents() {
     setPipelineState,
     setTargetApp,
     setPipelineError,
+    setStructuredError,
     setAccessibilityTrusted,
     setHistory,
   } = useAppStore()
@@ -47,6 +57,7 @@ export function useTauriEvents() {
       if (state === 'recording') {
         // Clear any previous error when starting a new pipeline run
         setPipelineError(null)
+        setStructuredError(null)
       }
       if (state === 'idle') {
         // Don't clear pipelineError here — CapsuleError auto-resets after 2.5s.
@@ -60,22 +71,40 @@ export function useTauriEvents() {
       }
     })
     addListener<string>('pipeline:target_app', setTargetApp)
-    addListener<string | { code: string; details?: string; retry_count: number }>(
+    addListener<string | StructuredError>(
       'pipeline:error',
       (payload) => {
-        const code = typeof payload === 'string' ? payload : payload.code
-        const message =
-          typeof payload === 'string'
-            ? payload
-            : t(`errors.${payload.code}`, { details: payload.details ?? '' })
-        setPipelineError(message)
-        if (code === 'ACCESSIBILITY_REQUIRED') {
-          setAccessibilityTrusted(false)
+        if (typeof payload === 'string') {
+          // Legacy string error
+          setPipelineError(payload)
+          setStructuredError({
+            code: 'unknown',
+            summary: payload,
+            details: undefined,
+            action: undefined,
+            retryable: false,
+            retry_count: 0,
+          })
+        } else {
+          // Structured error
+          const structured = payload as StructuredError
+          const message = t(`errors.${structured.code}.summary`, {
+            defaultValue: structured.summary || structured.code,
+            details: structured.details || '',
+          })
+          setPipelineError(message)
+          setStructuredError(structured)
+          if (structured.code === 'ACCESSIBILITY_REQUIRED') {
+            setAccessibilityTrusted(false)
+          }
         }
       },
     )
     addListener<{ code: string; details?: string }>('pipeline:warning', (payload) => {
-      const message = t(`errors.${payload.code}`, { details: payload.details ?? '' })
+      const message = t(`errors.${payload.code}.summary`, {
+        defaultValue: payload.code,
+        details: payload.details ?? '',
+      })
       toast(message, 'info')
     })
 
@@ -104,6 +133,7 @@ export function useTauriEvents() {
     setPipelineState,
     setTargetApp,
     setPipelineError,
+    setStructuredError,
     setAccessibilityTrusted,
     setHistory,
     t,

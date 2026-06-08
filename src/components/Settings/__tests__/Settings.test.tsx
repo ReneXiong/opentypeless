@@ -3,7 +3,7 @@
  *
  * 覆盖以下范围：
  * 1. Tab 切换 — 点击侧边栏后正确显示对应 Pane 内容
- * 2. 动画结构 — AnimatePresence wrapper 正常渲染
+ * 2. 渲染结构 — Sidebar motion 元素正常渲染
  * 3. appStore.llmModels — 状态提升：初始值、读写、reset
  * 4. LlmPane provider 切换 — 清空 models 缓存
  * 5. LlmPane useEffect skip — 已有缓存时不再触发 debounce fetch
@@ -198,9 +198,9 @@ describe('Settings tab 切换', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. 动画结构 — AnimatePresence wrapper 正常渲染
+// 2. 渲染结构 — Sidebar motion 元素正常渲染
 // ─────────────────────────────────────────────────────────────────────────────
-describe('Settings 动画结构', () => {
+describe('Settings 渲染结构', () => {
   beforeEach(() => {
     resetStore()
     seedSavedConfig()
@@ -304,7 +304,9 @@ describe('LlmPane models 缓存：已有缓存时跳过 fetch', () => {
     const { fetchLlmModels } = await import('../../../lib/tauri')
     const mockFetch = vi.mocked(fetchLlmModels)
     mockFetch.mockClear()
+    mockFetch.mockResolvedValue(['model-a', 'model-b'])
 
+    // Pre-populate models in store and set config
     useAppStore.getState().setLlmModels(['cached-model'])
     useAppStore.getState().updateConfig({
       llm_api_key: 'sk-test',
@@ -312,13 +314,28 @@ describe('LlmPane models 缓存：已有缓存时跳过 fetch', () => {
       llm_provider: 'openai',
     })
 
+    // Render directly into LLM pane
     renderSettings()
     clickSidebarItem('settings.aiPolish')
 
     await act(async () => {
-      vi.runAllTimers()
+      await vi.runAllTimersAsync()
     })
 
+    // Should fetch once on mount (lastFetchedRef is empty, config key is new)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    mockFetch.mockClear()
+
+    // Trigger a re-render by changing unrelated config (same api key/url)
+    act(() => {
+      useAppStore.getState().updateConfig({ polish_enabled: true })
+    })
+
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    // Should NOT fetch again because api key/url hasn't changed
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
